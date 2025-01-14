@@ -124,7 +124,7 @@ otu_table_matrix[is.nan(otu_table_matrix)] <- 0
 # Update the OTU table in the phyloseq object
 ps.prop@otu_table <- otu_table(otu_table_matrix, taxa_are_rows = taxa_are_rows(ps.prop))
 
-ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+#ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
 
 plot_ordination(ps.prop, ord.nmds.bray, color="Sample.Information", title="Bray NMDS")
 
@@ -132,5 +132,5 @@ plot_ordination(ps.prop, ord.nmds.bray, color="Sample.Information", title="Bray 
 top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
 ps.top20 <- prune_taxa(top20, ps.top20)
-plot_bar(ps.top20, x="Sample.Information", fill="Species")   + facet_wrap(~Type, scales="free_y")
+plot_bar(ps.top20, x="Family", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
 
