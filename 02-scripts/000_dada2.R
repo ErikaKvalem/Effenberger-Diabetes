@@ -133,4 +133,13 @@ top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
 ps.top20 <- prune_taxa(top20, ps.top20)
 plot_bar(ps.top20, x="Family", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
+plot_bar(ps.top20, x="Genus", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
 
+
+
+##########fastq to fasta 
+whereitsat <- "/data/projects/2024/Effenberger-Diabetes/data/20011/Fastq/"
+inny <- dir(whereitsat, pattern = "fastq.gz$")
+outie <- paste0(whereitsat, "/",  gsub("fastq.gz","fa", inny))
+
+for(i in seq(along = inny)) writeFasta(readFastq(whereitsat, inny[i]), outie[i])
