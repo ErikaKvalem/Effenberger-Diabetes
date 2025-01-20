@@ -1,5 +1,7 @@
 library(dada2);# packageVersion("dada2")
 
+ 
+
 path <- "/data/projects/2024/Effenberger-Diabetes/data/20011/Fastq" 
 figures_out = "/data/projects/2024/Effenberger-Diabetes/out/figures/"
 list.files(path)
