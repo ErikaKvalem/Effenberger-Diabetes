@@ -80,6 +80,16 @@ taxa.print <- taxa # Removing sequence rownames for display only
 rownames(taxa.print) <- NULL
 head(taxa.print)
 
+`%not_in%` <- purrr::negate(`%in%`)
+df_taxa <- as.data.frame(taxa, stringsAsFactors = FALSE)
+
+df_taxa_f=df_taxa[!is.na(df_taxa$Kingdom),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Phylum),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Class),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Order),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Family),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Genus),]
+
 #Handoff to phyloseq
 library(phyloseq); packageVersion("phyloseq")
 library(Biostrings); packageVersion("Biostrings")
@@ -97,10 +107,37 @@ samdf <- rbind(samdf, data.frame(IMGM.ID = "20002-0054", Sample.Information = "C
 rownames(samdf) <- samdf$IMGM.ID
 rownames(samdf) <- samples.out
 
-#construct a phyloseq object directly from the dada2 outputs.
-ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
-               sample_data(samdf), 
-               tax_table(taxa))
+
+otu_names <- colnames(seqtab.nochim)
+
+# Taxa names from df_taxa_f (assuming they are set as rownames)
+taxa_names <- rownames(df_taxa_f)
+
+# See which names are common
+common_taxa <- intersect(otu_names, taxa_names)
+
+common_taxa <- intersect(colnames(seqtab.nochim), rownames(df_taxa_f))
+
+# Check if any common taxa exist
+if (length(common_taxa) == 0) {
+  stop("No matching taxa names found between the OTU table and taxonomy table.")
+}
+
+# Subset the OTU table to keep only columns corresponding to common taxa
+seqtab.nochim_filtered <- seqtab.nochim[, common_taxa, drop = FALSE]
+
+# Subset the taxonomy table to keep only rows corresponding to common taxa
+df_taxa_f_filtered <- df_taxa_f[common_taxa, , drop = FALSE]
+
+# Convert the filtered taxonomy data frame to a matrix
+tax_mat <- as.matrix(df_taxa_f_filtered)
+
+ps <- phyloseq(
+  otu_table(seqtab.nochim_filtered, taxa_are_rows = FALSE),
+  sample_data(samdf),
+  tax_table(tax_mat)
+)
+
 ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sample
 
 
@@ -139,9 +176,4 @@ plot_bar(ps.top20, x="Genus", fill="Sample.Information")   + facet_wrap(~Type, s
 
 
 
-##########fastq to fasta 
-whereitsat <- "/data/projects/2024/Effenberger-Diabetes/data/20011/Fastq/"
-inny <- dir(whereitsat, pattern = "fastq.gz$")
-outie <- paste0(whereitsat, "/",  gsub("fastq.gz","fa", inny))
 
-for(i in seq(along = inny)) writeFasta(readFastq(whereitsat, inny[i]), outie[i])
