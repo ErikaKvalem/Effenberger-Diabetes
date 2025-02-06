@@ -1,6 +1,6 @@
 library(dada2);# packageVersion("dada2")
 
- 
+library(dplyr)
 
 path <- "/data/projects/2024/Effenberger-Diabetes/data/20011/Fastq" 
 figures_out = "/data/projects/2024/Effenberger-Diabetes/out/figures/"
@@ -89,6 +89,9 @@ df_taxa_f=df_taxa[!is.na(df_taxa$Class),]
 df_taxa_f=df_taxa[!is.na(df_taxa$Order),]
 df_taxa_f=df_taxa[!is.na(df_taxa$Family),]
 df_taxa_f=df_taxa[!is.na(df_taxa$Genus),]
+df_taxa_f=df_taxa[!is.na(df_taxa$Species),]
+
+
 
 #Handoff to phyloseq
 library(phyloseq); packageVersion("phyloseq")
@@ -106,6 +109,9 @@ samdf <- rbind(samdf, data.frame(IMGM.ID = "20002-0053", Sample.Information = "C
 samdf <- rbind(samdf, data.frame(IMGM.ID = "20002-0054", Sample.Information = "Control", Type = "Control"))
 rownames(samdf) <- samdf$IMGM.ID
 rownames(samdf) <- samples.out
+
+samdf_filtered <- samdf %>%
+  filter(!grepl("Control|Kontrolle", Type))
 
 
 otu_names <- colnames(seqtab.nochim)
@@ -168,12 +174,15 @@ ps.prop@otu_table <- otu_table(otu_table_matrix, taxa_are_rows = taxa_are_rows(p
 plot_ordination(ps.prop, ord.nmds.bray, color="Sample.Information", title="Bray NMDS")
 
 #Bar plot:
-top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:40]
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
 ps.top20 <- prune_taxa(top20, ps.top20)
 plot_bar(ps.top20, x="Family", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
 plot_bar(ps.top20, x="Genus", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
+plot_bar(ps.top20, x="Species", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
 
 
+
+plot_bar(ps.top20, fill="Genus", x="Sample.Information") 
 
 
