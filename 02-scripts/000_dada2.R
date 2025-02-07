@@ -140,7 +140,7 @@ tax_mat <- as.matrix(df_taxa_f_filtered)
 
 ps <- phyloseq(
   otu_table(seqtab.nochim_filtered, taxa_are_rows = FALSE),
-  sample_data(samdf),
+  sample_data(samdf_filtered),
   tax_table(tax_mat)
 )
 
@@ -174,7 +174,7 @@ ps.prop@otu_table <- otu_table(otu_table_matrix, taxa_are_rows = taxa_are_rows(p
 plot_ordination(ps.prop, ord.nmds.bray, color="Sample.Information", title="Bray NMDS")
 
 #Bar plot:
-top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:40]
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
 ps.top20 <- prune_taxa(top20, ps.top20)
 plot_bar(ps.top20, x="Family", fill="Sample.Information")   + facet_wrap(~Type, scales="free_y")
@@ -184,5 +184,19 @@ plot_bar(ps.top20, x="Species", fill="Sample.Information")   + facet_wrap(~Type,
 
 
 plot_bar(ps.top20, fill="Genus", x="Sample.Information") 
+
+library(phyloseq)
+library(ggplot2)
+
+# Convert phyloseq object to a data frame for ggplot2
+ps_melt <- psmelt(ps.top20)
+
+# Create a box plot
+ggplot(ps_melt, aes(x = Type, y = Abundance, fill = Sample.Information)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "Sample Information", y = "Abundance", title = "Box Plot of Abundance by Genus") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.3))  # Rotate x-axis labels if needed
+
 
 
