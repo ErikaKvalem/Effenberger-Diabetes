@@ -16,4 +16,9 @@
 *.csv
 *.pdf
 *.js
+*.ipynb_checkpoints
+*.RData
+*.RData
+02-scripts/nf-core_ampliseq/
+
 
