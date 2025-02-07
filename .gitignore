@@ -20,5 +20,5 @@
 *.RData
 *.RData
 02-scripts/nf-core_ampliseq/
-
+*.html
 
