@@ -12,5 +12,10 @@
 eval "$(conda shell.bash hook)"
 conda activate krona_2025
 # Run Kraken2
-ktImportTaxonomy -t 5 -m 3 kraken2_output_PDM.txt -o krona_report_PDM.html
-ktImportTaxonomy -t 5 -m 3 kraken2_output_DM.txt -o krona_report_DM.html
+#ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/PDM/kraken2_output_PDM.txt -o krona_report_PDM.html
+#ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/DM/kraken2_output_DM.txt -o krona_report_DM.html
+#ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/nikotin/kraken2_output_nikotin.txt -o krona_report_nikotin.html
+ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/no_nikotin/kraken2_output_no_nikotin.txt -o krona_report_no_nikotin.html
+#ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/male/kraken2_output_male.txt -o krona_report_male.html
+#ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/female/kraken2_output_female.txt -o krona_report_female.html
+ktImportTaxonomy -t 5 -m 3 /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/control/kraken2_output_control.txt -o krona_report_control.html

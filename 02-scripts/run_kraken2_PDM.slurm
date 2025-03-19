@@ -14,5 +14,6 @@ module load kraken2                         # Adjust based on your cluster's con
 # Run Kraken2
 kraken2 --db /data/databases/kraken2/16S_Silva138_20200326/16S_SILVA138_k2db \
         --threads 2 \
-        --output /data/projects/2024/Effenberger-Diabetes/out/kraken2/kraken2_output_PDM.txt \
+        --report /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/PDM/kraken2_report_PDM.txt \
+        --output /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/PDM/kraken2_output_PDM.txt \
         /data/projects/2024/Effenberger-Diabetes/data/20011/Fastq/PDM/*.fastq.gz

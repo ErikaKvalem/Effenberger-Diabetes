@@ -10,13 +10,11 @@
 # Load any necessary modules (if kraken2 is available as a module, load it)
 #module purge
 #module load kraken2                         # Adjust based on your cluster's configuration
-
 eval "$(conda shell.bash hook)"
 conda activate kraken2
-
 # Run Kraken2
 kraken2 --db /data/databases/kraken2/16S_Silva138_20200326/16S_SILVA138_k2db \
         --threads 2 \
-        --report /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/DM/kraken2_report_DM.txt \
-        --output /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/DM/kraken2_output_DM.txt \
-        /data/projects/2024/Effenberger-Diabetes/data/20011/Fastq/DM/*.fastq.gz
+        --report /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/female/kraken2_report_female.txt \
+        --output /data/projects/2024/Effenberger-Diabetes/out/kraken2/no_PDM3/female/kraken2_output_female.txt \
+        /data/projects/2024/Effenberger-Diabetes/data/20011/Fastq/female/*.fastq.gz
