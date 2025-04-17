@@ -443,6 +443,9 @@ feature_with_p_0.05 <- filtered_daa_results_annotated %>%
 
 # 2. Subset the abundance matrix to include only significant pathways
 sig_abundance <- metacyc_abundance_filtered_named[rownames(metacyc_abundance_filtered_named) %in% feature_with_p_0.05$feature, ]
+# Reorder rows by p_adjust ascending
+sig_abundance <- sig_abundance[feature_with_p_0.05$feature, ]
+
 
 # 3. Replace rownames with descriptions
 # Ensure the rownames are matched correctly to the descriptions
@@ -451,7 +454,9 @@ descriptions <- feature_with_p_0.05$description[match(rownames(sig_abundance), f
 rownames(sig_abundance) <- make.unique(descriptions)
 custom_colors <- c( "#FFA555","#6ABC6A")
 p3 <- my_pathway_heatmap(abundance = sig_abundance, metadata = metadata_filtered, group = "Type",show_legend = TRUE,colors = custom_colors)
-p3
+
+ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap.svg", plot = p3, width = 10, height = 10, device = "svg")
+
 ################################################################################HEATMAP patched
 my_pathway_heatmap <- function (abundance, metadata, group, colors = NULL, font_size = 12, 
           show_row_names = TRUE, show_legend = TRUE, custom_theme = NULL) 
@@ -530,12 +535,12 @@ my_pathway_heatmap <- function (abundance, metadata, group, colors = NULL, font_
                                                                                                                                                                                                        axis.text.y = ggplot2::element_text(size = font_size, 
                                                                                                                                                                                                                                            color = "black"), axis.ticks = ggplot2::element_blank(), 
                                                                                                                                                                                                        axis.text = ggplot2::element_text(color = "black", size = 10, 
-                                                                                                                                                                                                                                         face = "bold"), panel.spacing = unit(0, "lines"), 
+                                                                                                                                                                                                                                         face = "plain"), panel.spacing = unit(0, "lines"), 
                                                                                                                                                                                                   legend.title = ggplot2::element_text(size = 12, color = "black", 
-                                                                                                                                                                                                                                            face = "bold"), legend.text = ggplot2::element_text(size = 12, 
-                                                                                                                                                                                                                                                                                                color = "black", face = "bold"), panel.background = ggplot2::element_blank(), 
+                                                                                                                                                                                                                                            face = "plain"), legend.text = ggplot2::element_text(size = 12, 
+                                                                                                                                                                                                                                                                                                color = "black", face = "plain"), panel.background = ggplot2::element_blank(), 
                                                                                                                                                                                                        legend.margin = ggplot2::margin(l = 0, unit = "cm"), 
-                                                                                                                                                                                                       strip.text = element_text(size = 12, face = "bold")) + 
+                                                                                                                                                                                                       strip.text = element_text(size = 12, face = "plain")) + 
     ggplot2::guides(fill = ggplot2::guide_colorbar(direction = "vertical", 
                                                    reverse = F, barwidth = unit(0.6, "cm"), barheight = unit(9, 
                                                                                                              "cm"), title = "Z Score", title.position = "top", 
