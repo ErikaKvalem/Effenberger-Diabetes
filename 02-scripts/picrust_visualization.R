@@ -455,7 +455,7 @@ rownames(sig_abundance) <- make.unique(descriptions)
 custom_colors <- c( "#FFA555","#6ABC6A")
 p3 <- my_pathway_heatmap(abundance = sig_abundance, metadata = metadata_filtered, group = "Type",show_legend = TRUE,colors = custom_colors)
 
-ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap.svg", plot = p3, width = 10, height = 10, device = "svg")
+ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap.svg", plot = p3, width = 13, height = 10, device = "svg")
 
 ################################################################################HEATMAP patched
 my_pathway_heatmap <- function (abundance, metadata, group, colors = NULL, font_size = 12, 
