@@ -70,7 +70,7 @@ filtered_df <- daa_annotated_sub_method_results_df %>%
   slice_head(n = 50)
 
 filtered_df <- daa_annotated_sub_method_results_df[
-  grepl("Organismal Systems;|Metabolism; Nucleotide metabolism", daa_annotated_sub_method_results_df$pathway_class),
+  grepl("Metabolism; Carbohydrate metabolism|Organismal Systems; Immune system|Metabolism; Amino acid metabolism|Metabolism; Metabolism of other amino acids", daa_annotated_sub_method_results_df$pathway_class),
 ]
 
 ################################################################################FUNCTION PATHWAY ERRORBAR
@@ -210,16 +210,16 @@ p <- my_pathway_errorbar(
 
 
 
-p <- my_pathway_errorbar(abundance = kegg_abundance_filtered, daa_results_df = filtered_df, Group = metadata_filtered$Type, p_values_threshold = 0.01, order = "pathway_class", select = NULL,  colors = c("#3685BC","#D93C3E"), x_lab = "pathway_name")
+p <- my_pathway_errorbar(abundance = kegg_abundance_filtered, daa_results_df = filtered_df, Group = metadata_filtered$Type, p_values_threshold = 0.05, order = "pathway_class", select = NULL,  colors = c("#3685BC","#D93C3E"), x_lab = "pathway_name")
 
-p <- pathway_errorbar(abundance = kegg_abundance_filtered, daa_results_df = filtered_df, Group = metadata_filtered$Type, p_values_threshold = 0.01, order = "pathway_class", select = NULL, ko_to_kegg = TRUE, p_value_bar = TRUE, colors = c("#3685BC","#D93C3E"), x_lab = "pathway_name")
+p <- pathway_errorbar(abundance = kegg_abundance_filtered, daa_results_df = filtered_df, Group = metadata_filtered$Type, p_values_threshold = 0.05, order = "pathway_class", select = NULL, ko_to_kegg = TRUE, p_value_bar = TRUE, colors = c("#3685BC","#D93C3E"), x_lab = "pathway_name")
 
-
+p
 
 ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/pathway_plot.png", plot = p, width = 20, height = 10, dpi = 300)
 
 # Save as SVG
-ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/pathway_plot.svg", plot = p, width = 8, height = 10, device = "svg")
+ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/pathway_plot.svg", plot = p, width = 9, height = 7, device = "svg",dpi = 300)
 ############################################################################################# MetaCyc Pathway and EC BARPLOT
 
 
@@ -453,9 +453,8 @@ sig_abundance <- sig_abundance[feature_with_p_0.05$feature, ]
 descriptions <- feature_with_p_0.05$description[match(rownames(sig_abundance), feature_with_p_0.05$feature)]
 rownames(sig_abundance) <- make.unique(descriptions)
 custom_colors <- c( "#FFA555","#6ABC6A")
-p3 <- my_pathway_heatmap(abundance = sig_abundance, metadata = metadata_filtered, group = "Type",show_legend = TRUE,colors = custom_colors)
 
-ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap.svg", plot = p3, width = 13, height = 10, device = "svg")
+#ggsave("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap.svg", plot = p3, width = 13, height = 10, device = "svg")
 
 ################################################################################HEATMAP patched
 my_pathway_heatmap <- function (abundance, metadata, group, colors = NULL, font_size = 12, 
@@ -564,6 +563,8 @@ my_pathway_heatmap <- function (abundance, metadata, group, colors = NULL, font_
   cat("\n")
   return(p)
 }
+
+p3 <- my_pathway_heatmap(abundance = sig_abundance, metadata = metadata_filtered, group = "Type",show_legend = TRUE,colors = custom_colors)
 
 
 ################################################################################
