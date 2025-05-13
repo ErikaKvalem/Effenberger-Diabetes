@@ -2,6 +2,7 @@
 library(limma)
 library(edgeR) # For voom normalization
 library(dplyr)
+library(ggplot2)
 library(tidyverse)
 
 
@@ -46,7 +47,7 @@ meta<- read.csv(
 rownames(meta) <- meta$id
 
 meta <- meta %>%
-  select(
+  dplyr::select(
     sample_information, age, KHK1, KHK2, CA1, CA2,
     HbA1C..DCCT.NGSP.1, HbA1C..DCCT.NGSP.2, Glukose1, Glukose2,
     BMI1, BMI2, Pankreatektomie_encoded, id, Type
@@ -74,6 +75,16 @@ design <- model.matrix(~ Type , data = meta)
 
 counts_filtered <- counts_numeric[rownames(counts_numeric) %in% meta$id, ]
 counts_filtered <- t(counts_filtered)
+
+rel_abund <- apply(counts_filtered, 2, function(x) x / sum(x))
+
+# Filter out taxa with mean relative abundance < 0.001
+mean_abund <- rowMeans(rel_abund)
+keep_rel <- mean_abund >= 0.001
+
+# Apply the filter
+counts_filtered <- counts_filtered[keep_rel, ]
+
 dge <- DGEList(counts = counts_filtered)
 # Voom transformation
 v <- voom(dge, design, plot = TRUE)
@@ -86,7 +97,7 @@ results <- topTable(fit, coef = "TypePDM"  , number = Inf, adjust = "fdr")
 results_sig_raw <- results[results$P.Value < 0.01, ]
 head(results_sig_raw[order(results_sig$P.Value), ])
 
-library(ggplot2)
+
 
 results$significant <- results$P.Value < 0.01
 
