@@ -475,8 +475,8 @@ p <- p + theme(
 )
 p
 
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical.svg", height = 10, width = 5)
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical.png", height = 10, width = 5)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical.svg", height = 10, width = 5)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical.png", height = 10, width = 5)
 
 ########################################################################################
 run_models_by_group <- function(df_group, group_label, base_vars) {
@@ -618,10 +618,9 @@ forest_df_sig <- forest_df %>%
   filter(p.value < 0.05) %>%
   mutate(variable = recode(variable, !!!name_map))
 
-forest_df_sig <- forest_df_sig %>%
-  filter(variable != "NT-proBNP")
+
 # 6. Plot
-p <- ggplot(forest_df, aes(x = estimate, y = reorder(variable, estimate), color = group)) +
+p <- ggplot(forest_df_sig, aes(x = estimate, y = reorder(variable, estimate), color = group)) +
   geom_point(position = position_dodge(width = 0.6)) +
   geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2, position = position_dodge(width = 0.6)) +
   geom_text(aes(label = sig), hjust = -0.5, size = 4, position = position_dodge(width = 0.6)) +
@@ -635,38 +634,27 @@ p <- ggplot(forest_df, aes(x = estimate, y = reorder(variable, estimate), color 
     title = "",
     color = ""
   ) +
-  theme_minimal()
+  theme_minimal() + 
+  theme(
+    axis.text.y = element_text(size = 12),  # 👈 Increase this number as needed
+    axis.text.x = element_text(size = 10),  # optional: adjust x-axis too
+    legend.text = element_text(size = 11)   # optional: adjust legend text
+  )
 
 p <- p + theme(
   panel.background = element_rect(fill = "white", color = NA),
   plot.background = element_rect(fill = "white", color = NA)
 )
 
-p + 
+p <- p + 
   annotate("text", x = Inf, y = -Inf, hjust = 1.05, vjust = -1.5,
            label = "* p < 0.05   ** p < 0.01   *** p < 0.001",
            size = 4, color = "black", fontface = "italic")
 
 
-p <- ggplot(forest_df_sig, aes(x = estimate, y = reorder(variable, estimate), color = group)) +
-  geom_point(position = position_dodge(width = 0.6)) +
-  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2, position = position_dodge(width = 0.6)) +
-  geom_text(aes(label = sig), hjust = -0.5, size = 4, position = position_dodge(width = 0.6)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
-  scale_color_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
-  labs(
-    x = "Mean effect (Follow up vs Baseline)",
-    y = "",
-    title = "",
-    color = ""
-  ) +  coord_flip() +
-  theme_minimal() +
-  theme(
-    panel.background = element_rect(fill = "white", color = NA),
-    plot.background = element_rect(fill = "white", color = NA)
-  ) 
 
 p
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.svg", height = 10, width = 5)
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.png", height = 10, width = 5)
+ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.svg", height = 5, width = 7)
+ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.png", height = 5, width = 7)
 
+write.csv(forest_df_sig, file = "/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/tables/v02/forest_df_sig.csv", row.names = FALSE)
