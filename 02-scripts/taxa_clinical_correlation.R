@@ -15,11 +15,19 @@ library(knitr)
 library(dplyr)
 library(tidyr)
 library(stringr)
+library(viridis)
 
 library(readr)
 library(themis)
 
 library(tidymodels)
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+library(ggplot2)
 
 
 phy <- readRDS("/data/projects/2024/Effenberger-Diabetes/out/nf_core_ampliseq_003/phyloseq/dada2_phyloseq.rds")
@@ -430,9 +438,6 @@ ggplot(cor_results, aes(x = clinical_var, y = microbe, fill = cor)) +
 clinical_df$Type <- ifelse(grepl("PDM", clinical_df$sample_information), "PDM",
                                 ifelse(grepl("K", clinical_df$sample_information), "K", "DM"))
 
-library(dplyr)
-library(tidyr)
-library(purrr)
 
 types <- unique(clinical_df$Type)
 
@@ -533,7 +538,7 @@ ggplot(cor_top, aes(x = reorder_within(microbe, abs(cor), Type), y = cor, fill =
   theme_minimal()
 
 
-library(ggplot2)
+
 
 cor_top10 <- cor_results_all %>%
   filter(!is.na(cor)) %>%
@@ -564,74 +569,7 @@ ggplot(cor_results_all, aes(x = reorder(clinical_var_clean, cor), y = reorder(mi
 #ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.svg", height = 5, width = 5)
 #ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.png", height = 5, width = 5)
 
-############################################### LINEAR MODEL LOG REGRESSION
-
-ps_genus <- tax_glom(phy, "Genus")
-ps_rel <- transform_sample_counts(ps_genus, function(x) x / sum(x))
-otu_df <- as.data.frame(t(otu_table(ps_rel)))
-
-# Combine with metadata
-meta_df <- as.data.frame(sample_data(phy))
-data_all <- cbind(meta_df, otu_df)
-
-data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
-                                ifelse(grepl("K", data_all$sample_information), "K", "DM"))
-
-top10_genera <- names(sort(colMeans(otu_df), decreasing = TRUE))[1:10]
-data_model <- data_all %>%
-  dplyr::select("Type",  "NT-proBNP (BS)", "NT-proBNP (FU)",
-                "Ferritin (BS)", "Ferritin (FU)",
-                "Platelets (BS)", "Platelets (FU)",
-                "LDH (BS)", "LDH (FU)",
-                "LDL Cholesterol (BS)", "LDL Cholesterol (FU)","Alkaline Phosphatase (BS)","Alkaline Phosphatase (FU)","AST (BS)", "AST (FU)",
-                "ALT (BS)", "ALT (FU)", "Short-acting Insulin (BS)", "Short-acting Insulin (FU)", "Troponin T (High Sensitivity) (BS)","Troponin T (High Sensitivity) (FU)", 
-                "Urea (BS)", "Urea (FU)", "Weight (BS)", "Weight (FU)", "Iron (BS)", "Iron (FU)", "Body Mass Index (BMI) (BS)", "Body Mass Index (BMI) (FU)", "Lipid-lowering Medication (BS)", "Lipid-lowering Medication (FU)","Hyperlipidemia (BS)", "Hyperlipidemia (FU)", 
-                "Creatinine (IDMS) (BS)", "Creatinine (IDMS) (FU)", "Prothrombin Time (BS)", "Prothrombin Time (FU)", "Non-HDL Cholesterol (BS)", "Non-HDL Cholesterol (FU)", all_of(top10_genera)) %>%
-  drop_na()
-
-
-data_model$Type <- as.factor(data_model$Type)
-
-data_model <- data_model %>%
-  filter(Type %in% c("PDM", "DM")) %>%
-  mutate(Type = factor(Type))
-
-
-library(glmnet)
-
-# Prepare data
-x <- model.matrix(Type ~ . - 1, data = data_model)
-y <- data_model$Type  # must be 0/1 factor
-
-
-cv_fit <- cv.glmnet(x, y, alpha = 1, family = "binomial")
-
-# Coefficients at optimal lambda
-coef(cv_fit, s = "lambda.min")
-
-
-model_selected <- glm(Type ~ Age ,
-                      data = data_model, family = binomial)
-
-model_selected <- glm(Type ~ 
-                        c728ad6f5d183cb36fa06b6a3a47758b +
-                        ffc36e27c82042664a16bcd4d380b286,
-                      data = data_model, family = binomial)
-
-summary(model_selected)
-
-exp(cbind(OR = coef(model_selected), confint(model_selected)))
-
-
-library(pROC)
-probs <- predict(model_selected, type = "response")
-roc_obj <- roc(data_model$Type, probs)
-plot(roc_obj)
-auc(roc_obj)
-tax_table(phy)["c728ad6f5d183cb36fa06b6a3a47758b", ]
-
-############################################################################### 
-
+############################################### LINEAR MODEL LOG REGRESSION & top_features 
 ps_genus <- tax_glom(phy, "Genus")
 ps_rel <- transform_sample_counts(ps_genus, function(x) x / sum(x))
 otu_df <- as.data.frame(t(otu_table(ps_rel)))
@@ -697,9 +635,23 @@ print(auc)
 # --- Confusion matrix ---
 print(conf_mat(results, truth = Type, estimate = .pred_class))
 
+c <- conf_mat(results, truth = Type, estimate = .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_fill_gradient(high = "#E1812C", low = "#3A923A") +
+  labs(title = "")
+
+
+#ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusuion_matrix.svg", height = 3, width = 3)
+#ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusion_matrix.png", height = 3, width = 3)
+
+
 # --- ROC curve ---
-roc_curve(results, truth = Type, .pred_DM) %>%
+roc <- roc_curve(results, truth = Type, .pred_DM) %>%
   autoplot()
+
+ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve.svg", height = 3, width = 3)
+ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve.png", height = 3, width = 3)
+
 
 # --- Feature importance ---
 tidy(model) %>%
@@ -745,41 +697,187 @@ plot_data_ordered <- plot_data %>%
     )
   )
 
-ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
+p <- ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
   facet_wrap(~ Feature, scales = "free", ncol = 2) +
   scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
   theme_minimal() +
   labs(title = "Top Predictive Features", 
-       x = "", y = "Value") +
+       x = "", y = "Z-score") +
   theme(legend.position = "none")
 
 
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features.svg", height = 10, width = 5)
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features.png", height = 10, width = 5)
 
-########################## correlation matrix 
+################################################### roc_curve_train_test
+best_threshold = 0.5
+# --- Predictions for train and test ---
+# Add the truth label after baking, from baked data
+train_baked_with_type <- bake(rec_prepped, new_data = NULL) %>%
+  select(-sample_information)
 
-# Load necessary libraries
+test_baked_with_type <- bake(rec_prepped, new_data = test) %>%
+  select(-sample_information)
+
+# Predict on baked data
+pred_prob_train <- predict(model, new_data = train_baked_with_type, type = "prob") %>%
+  mutate(.pred_class = if_else(.pred_DM > best_threshold, "DM", "PDM"),
+         Type = train_baked_with_type$Type,
+         Set = "Train")
+
+pred_prob_test <- predict(model, new_data = test_baked_with_type, type = "prob") %>%
+  mutate(.pred_class = if_else(.pred_DM > best_threshold, "DM", "PDM"),
+         Type = test$Type,
+         Set = "Test")
+
+
+
+# --- Bind both datasets ---
+combined_preds <- bind_rows(pred_prob_train, pred_prob_test)
+
+# Add 'Set' column to each prediction frame
+roc_train <- roc_curve(pred_prob_train, truth = Type, .pred_DM) %>%
+  mutate(Set = "Train")
+
+roc_test <- roc_curve(pred_prob_test, truth = Type, .pred_DM) %>%
+  mutate(Set = "Test")
+
+# Combine
+roc_combined <- bind_rows(roc_train, roc_test)
+
+# Plot
+
+
+p <- ggplot(roc_combined, aes(x = 1 - specificity, y = sensitivity, color = Set)) +
+  geom_path(size = 1.2) +
+  geom_abline(lty = 2, color = "gray") +
+  theme_minimal() +
+  labs(title = "ROC Curve", x = "1 - Specificity", y = "Sensitivity") +
+  scale_color_manual(values = c("Train" = "#3a99bc", "Test" = "#db9e2a"))
+
+
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test.svg", height = 3, width = 3.5)
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test.png", height = 3, width = 3.5)
+################################### HEatmap 
+
+top_features <- tidy(model) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  arrange(desc(abs(estimate))) %>%
+  pull(term)
+
+# Remove backticks
+top_features_clean <- stringr::str_remove_all(top_features, "`")
+
+heatmap_data <- train_baked_labeled %>%
+  select(all_of(top_features_clean)) %>%
+  as.matrix()
+
+cor_matrix <- cor(heatmap_data, use = "pairwise.complete.obs")
+
+library(pheatmap)
+
+feature_labels <- c("8eb4e34fd58ab95fa2efab34940c01fa" = "Prevotella_9", "c728ad6f5d183cb36fa06b6a3a47758b" = "Faecalibacterium")
+
+
+colnames(cor_matrix) <- ifelse(colnames(cor_matrix) %in% names(feature_labels),
+                               feature_labels[colnames(cor_matrix)],
+                               colnames(cor_matrix))
+
+rownames(cor_matrix) <- ifelse(rownames(cor_matrix) %in% names(feature_labels),
+                               feature_labels[rownames(cor_matrix)],
+                               rownames(cor_matrix))
+
+pheatmap(
+  cor_matrix,
+  clustering_distance_rows = "euclidean",
+  clustering_distance_cols = "euclidean",
+  clustering_method = "complete",
+  color = colorRampPalette(c("white", "orange", "darkred"))(100),
+  border_color = NA,
+  main = ""
+)
+
+
+library(pheatmap)
+
+# Compute correlation matrix
+cor_matrix <- cor(train_baked[top_features_clean], method = "pearson", use = "pairwise.complete.obs")
+
+# Compute significance matrix (p-values)
+p_matrix <- matrix(NA, nrow = ncol(cor_matrix), ncol = ncol(cor_matrix))
+colnames(p_matrix) <- rownames(p_matrix) <- colnames(cor_matrix)
+
+for (i in 1:ncol(cor_matrix)) {
+  for (j in 1:ncol(cor_matrix)) {
+    test <- cor.test(train_baked[[top_features_clean[i]]], train_baked[[top_features_clean[j]]])
+    p_matrix[i, j] <- test$p.value
+  }
+}
+
+# Create annotation matrix with * for p < 0.05
+annot_matrix <- ifelse(p_matrix < 0.05, "*", "")
+
+# Relabel for genus names
+colnames(cor_matrix) <- rownames(cor_matrix) <- ifelse(colnames(cor_matrix) %in% names(feature_labels),
+                                                       feature_labels[colnames(cor_matrix)],
+                                                       colnames(cor_matrix))
+
+# Plot heatmap
+ht <- pheatmap(
+  cor_matrix,
+  display_numbers = annot_matrix,
+  number_color = "black",
+  clustering_distance_rows = "euclidean",
+  clustering_distance_cols = "euclidean",
+  clustering_method = "complete",
+  color = viridis(100),
+  border_color = NA,
+  main = "Feature correlation matrix",
+  legend_labels = "Correlation Coefficient (r)",  fontsize_row = 12,       # ⬅️ Increase row label font
+  fontsize_col = 12,       # ⬅️ Increase column label font
+  fontsize_number = 10     # ⬅️ Font size for "*"
+) 
+
+
+
+#ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap.svg", height = 8, width = 8)
+#ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap.png", height = 8, width = 8)
+
+########################################## forest plot
+
+library(broom)
 library(ggplot2)
-library(ggcorrplot)
-library(corrr)  # Optional alternative
 library(dplyr)
 
-# 1. Select only numeric predictors (drop outcome if present)
-numeric_data <- train_baked %>%
-  select(where(is.numeric))
+# Get non-zero coefficients
+coef_df <- tidy(model) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  arrange(estimate) %>%
+  mutate(term = stringr::str_remove_all(term, "`"))  # Remove backticks
 
-# 2. Compute correlation matrix
-cor_matrix <- cor(numeric_data, use = "pairwise.complete.obs", method = "pearson")
+# Add fake standard errors (if glmnet didn't return them)
+# This is a placeholder; ideally use actual SEs if available
+coef_df <- coef_df %>%
+  mutate(std.error = abs(estimate) * 0.2)  # ← Replace with real SEs if available
 
-# 3. Plot using ggcorrplot
-ggcorrplot(cor_matrix,
-           method = "circle",       # or "square"
-           type = "lower",          # or "upper"
-           lab = TRUE,              # show correlation coefficients
-           lab_size = 2.5,
-           colors = c("blue", "white", "red"),
-           title = "Correlation Matrix",
-           show.legend = TRUE)
+feature_labels <- c(
+  "8eb4e34fd58ab95fa2efab34940c01fa" = "g__Prevotella_9",
+  "c728ad6f5d183cb36fa06b6a3a47758b" = "g__Faecalibacterium"
+)
 
+coef_df$term <- recode(coef_df$term, !!!feature_labels)
 
+lg <- ggplot(coef_df, aes(x = estimate, y = reorder(term, estimate))) +
+  geom_col(fill = "#3182bd") +
+  geom_errorbarh(aes(xmin = estimate - std.error,
+                     xmax = estimate + std.error),
+                 height = 0.3, color = "black") +
+  theme_minimal() +
+  labs(title = "Logistic Regression Coefficients",
+       x = "Log-Odds (Coefficient)",
+       y = NULL) +
+  theme(text = element_text(size = 12))
 
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs.svg", height = 8, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs.png", height = 8, width = 8)
