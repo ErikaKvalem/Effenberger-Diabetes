@@ -16,6 +16,11 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 
+library(readr)
+library(themis)
+
+library(tidymodels)
+
 
 phy <- readRDS("/data/projects/2024/Effenberger-Diabetes/out/nf_core_ampliseq_003/phyloseq/dada2_phyloseq.rds")
 print(phy)
@@ -112,8 +117,7 @@ dat_all <- dat_all %>%
 
 
 
-df <- read_csv("/data/projects/2024/Effenberger-Diabetes/data/PDM merged 3.0_modified.csv")%>%
-  clean_names()
+df <- read_csv("/data/projects/2024/Effenberger-Diabetes/data/PDM merged 3.0_modified.csv")%>%clean_names()
 
 
 name_map_full <- c(
@@ -255,12 +259,7 @@ rownames(sam_new) <- rownames(sam)  # Ensures sample_names match exactly
 
 # 4. Convert and assign back to phyloseq
 sample_data(phy) <- phyloseq::sample_data(sam_new)
-
-
 ############################################## 
-
-
-
 # Add taxonomy columns to dat_all without losing other columns
 dat_all <- dat_all %>%
   mutate(
@@ -565,136 +564,222 @@ ggplot(cor_results_all, aes(x = reorder(clinical_var_clean, cor), y = reorder(mi
 #ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.svg", height = 5, width = 5)
 #ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.png", height = 5, width = 5)
 
-############################################# linear model 
+############################################### LINEAR MODEL LOG REGRESSION
 
-sample_data(phy)$Type <- ifelse(grepl("PDM", sample_data(phy)$sample_information), "PDM",
-                                ifelse(grepl("K", sample_data(phy)$sample_information), "K", "DM"))
+ps_genus <- tax_glom(phy, "Genus")
+ps_rel <- transform_sample_counts(ps_genus, function(x) x / sum(x))
+otu_df <- as.data.frame(t(otu_table(ps_rel)))
 
+# Combine with metadata
+meta_df <- as.data.frame(sample_data(phy))
+data_all <- cbind(meta_df, otu_df)
 
-# Ensure the response is a binary factor
-meta_sub$Type <- factor(meta_sub$Type, levels = c("DM", "PDM"))
-#
-data_model <- cbind(abund_sub, Type = meta_sub$Type)
+data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
+                                ifelse(grepl("K", data_all$sample_information), "K", "DM"))
 
-model <- glm(Type ~ ., data = data_model, family = binomial)
-summary(model)
-
-# Predict probabilities
-pred_probs <- predict(model, type = "response")
-
-# Convert to class predictions
-pred_class <- ifelse(pred_probs > 0.5, "PDM", "DM")
-
-# Confusion matrix
-table(True = meta_sub$Type, Predicted = pred_class)
-
-library(pROC)
-roc_obj <- roc(meta_sub$Type, pred_probs)
-plot(roc_obj, main = paste("AUC:", round(auc(roc_obj), 2)))
-
-meta_sub$Type <- factor(meta_sub$Type, levels = c("DM", "PDM"))  # PDM = 1, DM = 0
-data_model <- cbind(abund_sub, Type = meta_sub$Type)
-
-# Fit full logistic regression
-model <- glm(Type ~ ., data = data_model, family = binomial)
-summary(model)
-
-library(broom)
-
-model_summary <- tidy(model) %>%
-  filter(term != "(Intercept)") %>%
-  mutate(odds_ratio = exp(estimate)) %>%
-  arrange(p.value)
-
-# View top 10 features
-top_features <- model_summary$term[1:10]
-print(top_features)
-
-top_features <- gsub("`", "", top_features)  # remove backticks
-top_features <- trimws(top_features)         # remove whitespace
-
-top_features <- intersect(top_features, colnames(abund_sub))  # keep only matching ones
-abund_top <- abund_sub[, top_features, drop = FALSE]
+top10_genera <- names(sort(colMeans(otu_df), decreasing = TRUE))[1:10]
+data_model <- data_all %>%
+  dplyr::select("Type",  "NT-proBNP (BS)", "NT-proBNP (FU)",
+                "Ferritin (BS)", "Ferritin (FU)",
+                "Platelets (BS)", "Platelets (FU)",
+                "LDH (BS)", "LDH (FU)",
+                "LDL Cholesterol (BS)", "LDL Cholesterol (FU)","Alkaline Phosphatase (BS)","Alkaline Phosphatase (FU)","AST (BS)", "AST (FU)",
+                "ALT (BS)", "ALT (FU)", "Short-acting Insulin (BS)", "Short-acting Insulin (FU)", "Troponin T (High Sensitivity) (BS)","Troponin T (High Sensitivity) (FU)", 
+                "Urea (BS)", "Urea (FU)", "Weight (BS)", "Weight (FU)", "Iron (BS)", "Iron (FU)", "Body Mass Index (BMI) (BS)", "Body Mass Index (BMI) (FU)", "Lipid-lowering Medication (BS)", "Lipid-lowering Medication (FU)","Hyperlipidemia (BS)", "Hyperlipidemia (FU)", 
+                "Creatinine (IDMS) (BS)", "Creatinine (IDMS) (FU)", "Prothrombin Time (BS)", "Prothrombin Time (FU)", "Non-HDL Cholesterol (BS)", "Non-HDL Cholesterol (FU)", all_of(top10_genera)) %>%
+  drop_na()
 
 
+data_model$Type <- as.factor(data_model$Type)
 
+data_model <- data_model %>%
+  filter(Type %in% c("PDM", "DM")) %>%
+  mutate(Type = factor(Type))
 
-abund_top <- abund_sub[, top_features, drop = FALSE]
-data_model_top <- cbind(abund_top, Type = meta_sub$Type)
-
-model_top <- glm(Type ~ ., data = data_model_top, family = binomial)
-summary(model_top)
-
-tidy(model_top) %>%
-  mutate(odds_ratio = exp(estimate)) %>%
-  dplyr::select(term, estimate, odds_ratio, std.error, p.value)
-
-glimpse(tidy(model_top))
 
 library(glmnet)
 
-x <- as.matrix(abund_sub)
-y <- as.factor(meta_sub$Type)
-
-cv_fit <- cv.glmnet(x, y, family = "binomial", alpha = 1)  # LASSO
-plot(cv_fit)
-
-best_lambda <- cv_fit$lambda.min
-lasso_model <- glmnet(x, y, family = "binomial", alpha = 1, lambda = best_lambda)
-
-# Extract non-zero features
-lasso_coefs <- coef(lasso_model)
-selected_features <- rownames(lasso_coefs)[which(lasso_coefs != 0)]
-print(selected_features)
-
-selected_features <- rownames(lasso_coefs)[which(lasso_coefs != 0)]
-print(selected_features)
-
-plot(cv_fit)
+# Prepare data
+x <- model.matrix(Type ~ . - 1, data = data_model)
+y <- data_model$Type  # must be 0/1 factor
 
 
+cv_fit <- cv.glmnet(x, y, alpha = 1, family = "binomial")
 
-library(ggplot2)
-library(broom)
+# Coefficients at optimal lambda
+coef(cv_fit, s = "lambda.min")
 
-model_plot_data <- tidy(model_top) %>%
-  filter(term != "(Intercept)") %>%
-  mutate(
-    term = gsub("`", "", term),
-    odds_ratio = exp(estimate)
-  )
 
-ggplot(model_plot_data, aes(x = reorder(term, estimate), y = estimate)) +
-  geom_col(fill = "steelblue") +
-  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.2) +
-  coord_flip() +
-  labs(
-    title = "Logistic Regression Coefficients",
-    x = "Microbial Feature",
-    y = "Log-Odds (Coefficient)"
-  ) +
-  theme_minimal()
+model_selected <- glm(Type ~ Age ,
+                      data = data_model, family = binomial)
+
+model_selected <- glm(Type ~ 
+                        c728ad6f5d183cb36fa06b6a3a47758b +
+                        ffc36e27c82042664a16bcd4d380b286,
+                      data = data_model, family = binomial)
+
+summary(model_selected)
+
+exp(cbind(OR = coef(model_selected), confint(model_selected)))
+
 
 library(pROC)
-library(PRROC)
+probs <- predict(model_selected, type = "response")
+roc_obj <- roc(data_model$Type, probs)
+plot(roc_obj)
+auc(roc_obj)
+tax_table(phy)["c728ad6f5d183cb36fa06b6a3a47758b", ]
 
-# ROC curve (already computed)
-roc_obj <- roc(meta_sub$Type, pred_probs)
-plot(roc_obj, main = paste("AUC:", round(auc(roc_obj), 3)))
+############################################################################### 
 
-# Precision-Recall
-fg <- pred_probs[meta_sub$Type == "PDM"]
-bg <- pred_probs[meta_sub$Type == "DM"]
-pr <- pr.curve(scores.class0 = fg, scores.class1 = bg, curve = TRUE)
-plot(pr, main = "Precision-Recall Curve")
+ps_genus <- tax_glom(phy, "Genus")
+ps_rel <- transform_sample_counts(ps_genus, function(x) x / sum(x))
+otu_df <- as.data.frame(t(otu_table(ps_rel)))
+
+# Combine with metadata
+meta_df <- as.data.frame(sample_data(phy))
+data_all <- cbind(meta_df, otu_df)
+
+data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
+                        ifelse(grepl("K", data_all$sample_information), "K", "DM"))
+
+data_all <- data_all %>%
+  filter(Type %in% c("PDM", "DM")) %>%
+  mutate(Type = factor(Type))
 
 
-# Pearson correlation matrix of top features
-cor_mat <- cor(abund_sub[, top_features])
-heatmap(cor_mat, main = "Feature Correlation Heatmap")
+# Split data into train and test
+set.seed(421)
+split <- initial_split(data_all, prop = 0.65, strata = Type)
+train <- split %>% 
+  training()
+test <- split %>% 
+  testing()
 
-# VIF - needs all numeric and no perfect multicollinearity
-library(car)
-vif_model <- glm(Type ~ ., data = data_model_top, family = binomial)
-vif(vif_model)
+rec <- recipe(Type ~ ., data = train) %>%
+  update_role(sample_information, new_role = "id") %>%
+  step_novel(all_nominal_predictors()) %>%  #
+  step_zv(all_predictors()) %>%
+  step_nzv(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%         
+  step_impute_mean(all_numeric_predictors()) %>%    
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_downsample(Type)
+
+set.seed(421)
+rec_prepped <- prep(rec, training = train)
+
+train_baked <- bake(rec_prepped, new_data = NULL) %>%
+  select(-sample_information)
+test_baked  <- bake(rec_prepped, new_data = test) %>%
+  select(-sample_information)
+
+model <- logistic_reg(penalty = 0.1, mixture = 1) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification") %>%
+  fit(Type ~ ., data = train_baked)
+
+pred_prob <- predict(model, new_data = test_baked, type = "prob")
+pred_class <- predict(model, new_data = test_baked, type = "class")
+
+results <- test %>%
+  select(Type) %>%
+  bind_cols(pred_class, pred_prob)
+
+# --- Evaluation ---
+acc <- accuracy(results, truth = Type, estimate = .pred_class)
+auc <- roc_auc(results, truth = Type, .pred_DM)
+
+print(acc)
+print(auc)
+
+# --- Confusion matrix ---
+print(conf_mat(results, truth = Type, estimate = .pred_class))
+
+# --- ROC curve ---
+roc_curve(results, truth = Type, .pred_DM) %>%
+  autoplot()
+
+# --- Feature importance ---
+tidy(model) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  arrange(desc(abs(estimate))) 
+
+
+# Clean up top_features by removing backticks
+top_features_clean <- stringr::str_remove_all(top_features, "`")
+
+# Then select and plot
+plot_data <- train_baked_labeled %>%
+  select(Type, all_of(top_features_clean)) %>%
+  pivot_longer(-Type, names_to = "Feature", values_to = "Value")
+
+# Taxa names you want to identify
+target_ids <- c("8eb4e34fd58ab95fa2efab34940c01fa", "c728ad6f5d183cb36fa06b6a3a47758b")
+
+# Retrieve tax_table as a data frame
+tax_df <- as.data.frame(tax_table(phy))
+
+# Look up the Genus for the target taxa
+genus_labels <- tax_df[target_ids, "Genus", drop = FALSE]
+genus_labels
+
+# Create mapping of hash IDs to genus
+label_map <- setNames(genus_labels$Genus, rownames(genus_labels))
+
+# Relabel Feature column
+plot_data_ordered <- plot_data_ordered %>%
+  mutate(Feature = recode(Feature, !!!label_map))
+
+
+plot_data_ordered <- plot_data %>%
+  mutate(
+    Feature = factor(
+      Feature,
+      levels = c(
+        setdiff(unique(Feature), c("8eb4e34fd58ab95fa2efab34940c01fa", "c728ad6f5d183cb36fa06b6a3a47758b")),
+        "8eb4e34fd58ab95fa2efab34940c01fa", 
+        "c728ad6f5d183cb36fa06b6a3a47758b"
+      )
+    )
+  )
+
+ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  facet_wrap(~ Feature, scales = "free", ncol = 2) +
+  scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
+  theme_minimal() +
+  labs(title = "Top Predictive Features", 
+       x = "", y = "Value") +
+  theme(legend.position = "none")
+
+
+
+########################## correlation matrix 
+
+# Load necessary libraries
+library(ggplot2)
+library(ggcorrplot)
+library(corrr)  # Optional alternative
+library(dplyr)
+
+# 1. Select only numeric predictors (drop outcome if present)
+numeric_data <- train_baked %>%
+  select(where(is.numeric))
+
+# 2. Compute correlation matrix
+cor_matrix <- cor(numeric_data, use = "pairwise.complete.obs", method = "pearson")
+
+# 3. Plot using ggcorrplot
+ggcorrplot(cor_matrix,
+           method = "circle",       # or "square"
+           type = "lower",          # or "upper"
+           lab = TRUE,              # show correlation coefficients
+           lab_size = 2.5,
+           colors = c("blue", "white", "red"),
+           title = "Correlation Matrix",
+           show.legend = TRUE)
+
+
 
