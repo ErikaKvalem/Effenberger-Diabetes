@@ -4,12 +4,11 @@ library(phyloseq)
 
 library(microbiomeMarker)
 
-library(knitr)
 
 library(dplyr)
 library(microbiomeMarker)
 
-library(knitr)
+#library(knitr)
 
 
 phy <- readRDS("/data/projects/2024/Effenberger-Diabetes/out/nf_core_ampliseq_003/phyloseq/dada2_phyloseq.rds")
@@ -87,7 +86,7 @@ dat <- marker_table(lef_out) %>%
 
 head(dat)
 
-dat %>% kable(align = "c")
+dat %>% table(align = "c")
 
 
 
@@ -130,7 +129,7 @@ p <- ggplot(dat, aes(x = feature_mod, y = signed_lda, fill = enrich_group)) +
 p<- p + theme(legend.key = element_blank(), 
                          strip.background = element_rect(colour="black", fill="white"))
 
-
+p
 #plot_cladogram(lef_out, color = c("red","blue"), clade_label_level = 2)
 
 #ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/barplot_lefse_dm_pdm.svg", height = 10, width = 10)
@@ -233,9 +232,10 @@ facet_wrap(~ comparison, scales = "free_y", ncol = 1) +
 
 p_all
 
-p<- p + theme(legend.key = element_blank(), 
+p_all<- p_all + theme(legend.key = element_blank(), 
               strip.background = element_rect(colour="black", fill="white"))
 
+p_all
 ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/barplot_lefse_pall_genus.svg", height = 5, width = 5)
 ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/barplot_lefse_pall_genus.png", height = 5, width = 5)
 ###
