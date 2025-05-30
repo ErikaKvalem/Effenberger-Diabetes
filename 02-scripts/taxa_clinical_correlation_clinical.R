@@ -2,7 +2,8 @@ library(tidyverse)
 
 library(phyloseq)
 
-
+library(ggplot2)
+library(ggpmisc)
 
 library(dplyr)
 library(microbiomeMarker)
@@ -265,6 +266,121 @@ rownames(sam_new) <- rownames(sam)  # Ensures sample_names match exactly
 
 # 4. Convert and assign back to phyloseq
 sample_data(phy) <- phyloseq::sample_data(sam_new)
+
+############################################# LINEAR REGRESSION
+
+sam_new$Type <- ifelse(grepl("PDM", sam_new$sample_information), "PDM",
+                                ifelse(grepl("K", sam_new$sample_information), "K", "DM"))
+
+# 1. Get all (BS) columns
+bs_vars <- grep("\\(BS\\)$", colnames(sam_new), value = TRUE)
+
+# 2. Derive corresponding (FU) column names
+fu_vars <- gsub("\\(BS\\)$", "(FU)", bs_vars)
+
+# 3. Keep only pairs where both BS and FU columns exist
+valid_pairs <- bs_vars[fu_vars %in% colnames(sam_new)]
+fu_vars <- gsub("\\(BS\\)$", "(FU)", valid_pairs)
+
+# 4. Compute delta = FU - BS
+for (i in seq_along(valid_pairs)) {
+  delta_name <- gsub(" \\(BS\\)$", " (Delta)", valid_pairs[i])
+  sam_new[[delta_name]] <- as.numeric(sam_new[[fu_vars[i]]]) - as.numeric(sam_new[[valid_pairs[i]]])
+}
+
+# 5. Optional: get names of new delta variables
+delta_vars <- grep(" \\(Delta\\)$", colnames(sam_new), value = TRUE)
+
+
+# Linear model formula
+formula <- y ~ x
+
+
+ggplot(sam_new, aes(x =`Body Mass Index (BMI) (FU)`, y = `HbA1c (DCCT/NGSP) (FU)`, color = Type)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", formula = formula, se = TRUE, color = "black") +
+  stat_poly_eq(
+    aes(label = paste(..p.value.label..)), 
+    formula = formula, 
+    parse = TRUE, 
+    label.x.npc = "right", 
+    label.y.npc = 0.95,
+    size = 5
+  ) + scale_color_manual(values = c(
+    "DM" = "#E1812C",
+    "PDM" = "#3A923A",
+    "K" = "#3274A1"
+  )) +
+  labs(
+    title = "HbA1c vs ",
+    x = "Weight",
+    y = "HbA1c"
+  ) +
+  theme_minimal()
+
+
+p <- ggplot(sam_new, aes(x = `HbA1c (DCCT/NGSP) (FU)`, y = `Body Mass Index (BMI) (FU)`, color = Type)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = TRUE) +
+  stat_poly_eq(
+    aes(label = paste(..p.value.label.., sep = "~~~")),
+    formula = y ~ x, parse = TRUE, label.x.npc = "right", label.y.npc = 0.95
+  ) +
+  labs(title = "HbA1c vs BMI", x = "HbA1c (FU)", y = "Body Mass Index (BMI) (FU)") +
+  scale_color_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A", "K" = "blue")) +
+  theme_minimal()
+
+
+
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/linear_regression_bmi_hba1c.svg", height = 4, width = 7)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/linear_regression_bmi_hba1c.png", height = 4, width = 7)
+############################################## linear regression GENUS 
+
+library(phyloseq)
+library(dplyr)
+
+# Aggregate at Genus level if not already
+phy_genus <- tax_glom(phy, taxrank = "Genus")
+
+
+# Transform counts to relative abundance (optional but common)
+phy_genus_rel <- transform_sample_counts(phy_genus, function(x) x / sum(x))
+
+# Extract abundance data
+abund <- as.data.frame(otu_table(phy_genus_rel))
+taxa <- as.data.frame(tax_table(phy_genus_rel))
+
+# Identify row matching genus "Blautia"
+blautia_row <- rownames(taxa)[taxa$Genus == "Streptococcus"]
+blautia_abund <- as.numeric(abund[blautia_row, ])
+names(blautia_abund) <- colnames(abund)
+# Make sure sample names align
+common_samples <- intersect(rownames(sam_new), names(blautia_abund))
+
+
+# Create a combined dataframe
+plot_df <- sam_new[common_samples, ]
+plot_df$Blautia <- blautia_abund[common_samples]
+library(ggplot2)
+library(ggpmisc)
+
+
+p <- ggplot(plot_df, aes(x = Blautia, y = `Transferrin (BS)`, color = Type)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = TRUE) +
+  stat_poly_eq(
+    aes(label = paste(..p.value.label..)),
+    formula = y ~ x, parse = TRUE,
+    label.x.npc = "left", label.y.npc = 0.95
+  ) +
+  labs(title = "Streptococcus vs Transferrin (BS)", x = "Streptococcus", y = "Transferrin (BS)") +
+  scale_color_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A", "K" = "blue")) +
+  theme_minimal()
+
+
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/linear_regression_Streptococcus_Transferrin.svg", height = 4, width = 7)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/linear_regression_Streptococcus_Transferrin.png", height = 4, width = 7)
+
 ############################################## 
 # Add taxonomy columns to dat_all without losing other columns
 dat_all <- dat_all %>%
@@ -490,7 +606,7 @@ ggplot(cor_results_all, aes(x = clinical_var_clean, y = microbe, fill = cor)) +
   facet_wrap(~Type,ncol = 1) +
   scale_fill_gradient2(
     low = "blue", high = "red", mid = "white", midpoint = 0,
-    name = "Spearman R"
+    name = "Pearson R"
   ) +
   labs(
     title = "Correlation Heatmaps by Type",
@@ -505,7 +621,7 @@ ggplot(cor_results_all, aes(x = clinical_var_clean, y = microbe, fill = cor)) +
 
 
 p_all <- ggplot(cor_results_all, aes(x = clinical_var_clean, y = microbe)) +
-  geom_point(aes(color = cor, size = -log10(p_value)), alpha = 0.8) +
+  geom_point(aes(color = cor, size = -log10(p_adj)), alpha = 0.8) +
   facet_wrap(~Type, ncol = 1) +
   scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
   labs(
@@ -748,6 +864,34 @@ p <- ggplot(plot_data, aes(x = Type, y = Value, fill = Type)) +
   labs(title = "Top Predictive Features", 
        x = "", y = "Z-score") +
   theme(legend.position = "none")+
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 14),    # facet label size
+    axis.text = element_text(size = 12),     # axis tick label size
+    axis.title = element_text(size = 14),    # axis title size
+    plot.title = element_text(size = 16, face = "bold")  # title size
+  )
+
+library(ggplot2)
+library(ggpubr)
+
+p <- ggplot(plot_data, aes(x = Type, y = Value, fill = Type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  facet_wrap(~ Feature, scales = "free", ncol = 5) +
+  scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
+  stat_compare_means(
+    method = "wilcox.test", 
+    label = "p.signif", 
+    comparisons = list(c("DM", "PDM")),
+    p.adjust.method = "BH",   # FDR correction (Benjamini-Hochberg)
+    hide.ns = TRUE            # hide non-significant results
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Top Predictive Features", 
+    x = "", 
+    y = "Z-score"
+  ) +
   theme(
     legend.position = "none",
     strip.text = element_text(size = 14),    # facet label size

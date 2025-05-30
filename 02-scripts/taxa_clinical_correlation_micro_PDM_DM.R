@@ -20,7 +20,7 @@ library(viridis)
 library(readr)
 library(themis)
 
-library(tidymodels)
+#library(tidymodels)
 
 
 library(dplyr)
@@ -741,18 +741,32 @@ plot_data_ordered <- plot_data %>%
    )
   )
 
+library(ggpubr)
+
 p <- ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
-  facet_wrap(~ Feature, scales = "free", ncol = 2) +
+  facet_wrap(~ Feature, scales = "free", ncol = 5) +
   scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
+  stat_compare_means(method = "wilcox.test", 
+                     label = "p.signif", 
+                     comparisons = list(c("DM", "PDM")),
+                     hide.ns = TRUE) +
   theme_minimal() +
   labs(title = "Top Predictive Features", 
        x = "", y = "Z-score") +
-  theme(legend.position = "none")
-p
+  theme(legend.position = "none")+
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 14),    # facet label size
+    axis.text = element_text(size = 12),     # axis tick label size
+    axis.title = element_text(size = 14),    # axis title size
+    plot.title = element_text(size = 16, face = "bold")  # title size
+  )
 
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_microbial.svg", height = 10, width = 5)
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_microbial.png", height = 10, width = 5)
+
+p
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_microbial.svg", height = 4, width = 15)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_microbial.png", height = 4, width = 15)
 
 ################################################### roc_curve_train_test
 best_threshold = 0.5
@@ -936,11 +950,11 @@ lg <- ggplot(coef_df, aes(x = estimate, y = reorder(term, estimate))) +
   labs(title = "Logistic Regression Coefficients",
        x = "Log-Odds (Coefficient)",
        y = NULL) +
-  theme(text = element_text(size = 12))
+  theme(text = element_text(size = 20))
 lg
 
-#ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_microbial.svg", height = 8, width = 8)
-#ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_microbial.png", height = 8, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_microbial.svg", height = 4, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_microbial.png", height = 4, width = 8)
 ###############################################
 
 
@@ -1016,3 +1030,190 @@ pheatmap(log_otu_mat,
          clustering_distance_rows = "euclidean",
          clustering_method = "complete",
          main = "Heatmap of Selected Genera (Log Relative Abundance)")
+
+############################################### working beautiful heatmap zscore per type
+
+# 1. Define unique list of genera
+selected_genera <- unique(c(
+  "Blautia", "Subdoligranulum", "CAG-352", "Akkermansia",
+  "Fusicatenibacter", "Streptococcus", "Escherichia-Shigella",
+  "Faecalibacterium"
+))
+
+# 2. Transpose OTU matrix and match metadata
+otu_df <- as.data.frame(t(log_otu_mat))
+otu_df$sample_information <- rownames(otu_df)
+rownames(annotation_col) <- annotation_col$sample_information
+
+# Transpose first
+log_otu_mat_t <- t(log_otu_mat)  # Samples as rows, genera as columns
+
+# Now subset annotation metadata to match transposed OTU matrix
+annotation_clean <- annotation_col[rownames(log_otu_mat_t), , drop = FALSE]
+annotation_clean$sample_information <- rownames(annotation_clean)
+
+
+
+
+# 3. Merge OTU + metadata
+otu_annotated <- left_join(otu_df, annotation_clean, by = "sample_information") %>%
+  filter(!is.na(Type))
+
+# 4. Keep only numeric columns + group info
+numeric_cols <- sapply(otu_annotated, is.numeric)
+otu_clean <- otu_annotated[, numeric_cols]
+otu_clean$Type <- otu_annotated$Type
+
+# 5. Group-wise mean
+group_means_df <- otu_clean %>%
+  group_by(Type) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  column_to_rownames("Type")
+
+# 6. Transpose: genera as rows
+group_means <- t(group_means_df)
+colnames(group_means) <- rownames(group_means_df)
+
+# 7. Subset selected genera
+group_means_selected <- group_means[rownames(group_means) %in% selected_genera, ]
+
+# 8. Z-score normalization by genus (row)
+group_means_z <- t(scale(t(group_means_selected)))
+
+# 9. Ensure numeric matrix
+group_means_z <- as.matrix(group_means_z)
+mode(group_means_z) <- "numeric"
+
+# 10. Plot Z-score heatmap
+#ph <- pheatmap(group_means_z,
+#         color = colorRampPalette(c("#998ec3", "white", "#f1a340"))(100),
+#         cluster_rows = TRUE,
+#         cluster_cols = TRUE,
+ #        clustering_distance_rows = "euclidean",
+  #       clustering_method = "complete",
+   #      main = "Z-score Normalized Heatmap")
+
+ph <- pheatmap(t(group_means_z),  # <- transpose the matrix
+               color = colorRampPalette(c("#998ec3", "white", "#f1a340"))(100),
+               cluster_rows = TRUE,      # now clusters samples (vertically)
+               cluster_cols = TRUE,      # now clusters genera (horizontally)
+               clustering_distance_rows = "euclidean",
+               clustering_method = "complete", angle_col = 0,
+               main = "Z-score Normalized Heatmap")
+
+# Transpose to samples x genera
+otu_df <- as.data.frame(t(log_otu_mat))
+otu_df$sample <- rownames(otu_df)
+
+# Merge with metadata
+annotation_clean <- annotation_col
+annotation_clean$sample <- rownames(annotation_clean)
+
+otu_annotated <- left_join(otu_df, annotation_clean, by = "sample")
+
+# Ensure 'Type' is a factor
+otu_annotated$Type <- factor(otu_annotated$Type, levels = c("K", "DM", "PDM"))
+
+# Run Kruskal-Wallis test for each genus
+kruskal_results <- sapply(colnames(log_otu_mat_t), function(genus) {
+  tryCatch({
+    kruskal.test(otu_annotated[[genus]] ~ otu_annotated$Type)$p.value
+  }, error = function(e) NA)
+})
+
+# Adjust p-values for multiple testing (FDR)
+p_adj <- p.adjust(kruskal_results, method = "fdr")
+
+# Combine results
+kw_df <- data.frame(
+  Genus = names(kruskal_results),
+  P_value = kruskal_results,
+  Adj_P_value = p_adj
+)
+
+# View significant genera (FDR < 0.05)
+significant_genera <- kw_df[kw_df$Adj_P_value < 0.05, ]
+print(significant_genera)
+
+get_stars <- function(p) {
+  if (is.na(p)) return("")
+  else if (p <= 0.001) return("***")
+  else if (p <= 0.01) return("**")
+  else if (p <= 0.05) return("*")
+  else return("")
+}
+
+# Build a matrix of stars
+signif_genus <- kw_df$Genus
+signif_stars <- sapply(kw_df$Adj_P_value, get_stars)
+names(signif_stars) <- signif_genus
+
+# Create matrix matching heatmap dimension
+stars_matrix <- matrix("", nrow = nrow(group_means_z), ncol = ncol(group_means_z),
+                       dimnames = dimnames(group_means_z))
+
+# Fill rows (genera) that are significant with stars across all columns
+for (genus in names(signif_stars)) {
+  if (genus %in% rownames(stars_matrix)) {
+    stars_matrix[genus, ] <- signif_stars[genus]
+  }
+}
+
+
+ph <- pheatmap(t(group_means_z),                        # <- Transpose for horizontal layout
+         color = colorRampPalette(c("#998ec3", "white", "#f1a340"))(100),
+         cluster_rows = TRUE,                     # now clusters sample groups
+         cluster_cols = TRUE,                     # now clusters genera
+         display_numbers = t(stars_matrix),       # <- Transpose significance stars to match
+         number_color = "black",
+         fontsize_number = 12,
+         angle_col = 45,                          # Rotate x-axis labels for readability
+         main = "Z-score Normalized Heatmap")
+
+ggsave(plot=ph,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/zscore_heatmap.svg", height = 4, width =6)
+ggsave(plot=ph,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/zscore_heatmap.png", height = 4, width = 6)
+#
+########################### working beautiful by sample (heatmap zscore)
+
+# Load libraries
+library(pheatmap)
+library(dplyr)
+library(tibble)
+
+# 1. Define selected genera and custom sample order
+selected_genera <- unique(c(
+  "Blautia", "Subdoligranulum", "CAG-352", "Akkermansia",
+  "Fusicatenibacter", "Streptococcus", "Escherichia-Shigella",
+  "Faecalibacterium"
+))
+
+custom_order <- c("K1",  "K2",  "K3", "K4", "K5", "K6", "K7", "K8", "K9", "K10",
+                  "DM1", "DM2", "DM3", "DM4", "DM5", "DM6", "DM7", "DM8", "DM9", "DM10", 
+                  "DM11", "DM12", "DM13", "DM14", "DM15", "DM16", "DM17", "DM18", "DM19", "DM20", "DM21",
+                  "PDM1", "PDM2", "PDM4", "PDM5", "PDM6", "PDM7", "PDM8", "PDM9", "PDM10", 
+                  "PDM11", "PDM12", "PDM13", "PDM14", "PDM15", "PDM16", "PDM17", "PDM18")
+
+# 2. Transpose OTU matrix: samples as rows
+log_otu_mat_t <- t(log_otu_mat)
+
+# 3. Subset to selected genera
+otu_selected <- log_otu_mat_t[, colnames(log_otu_mat_t) %in% selected_genera]
+
+# 4. Filter for samples in custom order (in that order)
+otu_selected <- otu_selected[custom_order[custom_order %in% rownames(otu_selected)], ]
+
+# 5. Optional Z-score normalization across samples for each genus
+otu_selected_z <- scale(otu_selected)  # Scales by column (genus)
+otu_selected_z <- t(otu_selected_z)    # Back to: rows = genera, columns = samples
+
+# 6. Add sample annotations (e.g., Type)
+annotation_clean <- annotation_col[custom_order[custom_order %in% rownames(annotation_col)], , drop = FALSE]
+
+# 7. Plot heatmap with fixed column order
+pheatmap(otu_selected_z,
+         annotation_col = annotation_clean["Type"],
+         cluster_cols = FALSE,  # Keep your custom order
+         cluster_rows = TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         show_colnames = TRUE,
+         main = "Z-score Heatmap of Selected Genera by Sample (Custom Order)")

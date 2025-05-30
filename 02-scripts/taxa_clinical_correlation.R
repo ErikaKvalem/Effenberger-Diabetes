@@ -4,13 +4,8 @@ library(phyloseq)
 
 library(microbiomeMarker)
 
-library(knitr)
 
 library(dplyr)
-library(microbiomeMarker)
-
-library(knitr)
-
 
 library(dplyr)
 library(tidyr)
@@ -20,7 +15,7 @@ library(viridis)
 library(readr)
 library(themis)
 
-library(tidymodels)
+#library(tidymodels)
 
 
 library(dplyr)
@@ -486,7 +481,7 @@ cor_results_all <- cor_results_all %>%
 #cor_results_all <- cor_results_all %>%
 #  filter(Type != "K")
 
-ggplot(cor_results_all, aes(x = clinical_var_clean, y = microbe, fill = cor)) +
+p_all<- ggplot(cor_results_all, aes(x = clinical_var_clean, y = microbe, fill = cor)) +
   geom_tile(color = "white") +
   geom_text(aes(label = signif), size = 3) +
   facet_wrap(~Type,ncol = 1) +
@@ -566,17 +561,38 @@ ggplot(cor_results_all, aes(x = reorder(clinical_var_clean, cor), y = reorder(mi
   )
 
 
-#ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.svg", height = 5, width = 5)
-#ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.png", height = 5, width = 5)
+ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.svg", height = 5, width = 9)
+ggsave(plot=p_all,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/dotplot_correlation_micro_clinical.png", height = 5, width = 9)
 
-############################################### LINEAR MODEL LOG REGRESSION & top_features 
+############################################### LINEAR MODEL LOG REGRESSION & top_features ONLY CLINICAL 
 ps_genus <- tax_glom(phy, "Genus")
 ps_rel <- transform_sample_counts(ps_genus, function(x) x / sum(x))
 otu_df <- as.data.frame(t(otu_table(ps_rel)))
 
 # Combine with metadata
 meta_df <- as.data.frame(sample_data(phy))
-data_all <- cbind(meta_df, otu_df)
+#data_all <- cbind(meta_df, otu_df)
+
+
+data_all <- as(sample_data(phy), "data.frame")
+#clinical_vars <- colnames(data_all)
+#bs_vars <- clinical_vars[grepl("\\(BS\\)$", clinical_vars)]
+#fu_vars <- gsub("\\(BS\\)$", "(FU)", bs_vars)
+
+#valid_pairs <- bs_vars[fu_vars %in% colnames(data_all)]
+#fu_vars <- gsub("\\(BS\\)$", "(FU)", valid_pairs)
+
+#for (i in seq_along(valid_pairs)) {
+#  delta_name <- gsub(" \\(BS\\)$", " (Delta)", valid_pairs[i])
+#  data_all[[delta_name]] <- as.numeric(data_all[[fu_vars[i]]]) - as.numeric(data_all[[valid_pairs[i]]])
+#}
+
+#delta_vars <- grep(" \\(Delta\\)$", colnames(data_all), value = TRUE)
+#meta_keep <- c("sample_information", "Type")
+#microbial_vars <- setdiff(colnames(otu_df), c("sample_information", "Type"))
+
+
+#data_all <- data_all[, c(meta_keep, delta_vars, microbial_vars)]
 
 data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
                         ifelse(grepl("K", data_all$sample_information), "K", "DM"))
@@ -584,7 +600,6 @@ data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
 data_all <- data_all %>%
   filter(Type %in% c("PDM", "DM")) %>%
   mutate(Type = factor(Type))
-
 
 # Split data into train and test
 set.seed(421)
@@ -638,19 +653,22 @@ print(conf_mat(results, truth = Type, estimate = .pred_class))
 c <- conf_mat(results, truth = Type, estimate = .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_fill_gradient(high = "#E1812C", low = "#3A923A") +
-  labs(title = "")
+  labs(title = "Confusion matrix")
+c
 
-
-#ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusuion_matrix.svg", height = 3, width = 3)
-#ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusion_matrix.png", height = 3, width = 3)
+ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusuion_matrix_clinical.svg", height = 3, width = 3)
+ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusion_matrix_clinical.png", height = 3, width = 3)
 
 
 # --- ROC curve ---
 roc <- roc_curve(results, truth = Type, .pred_DM) %>%
   autoplot()
 
-ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve.svg", height = 3, width = 3)
-ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve.png", height = 3, width = 3)
+roc
+
+
+ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_clinical.svg", height = 3, width = 3)
+ggsave(plot=roc,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_clinical.png", height = 3, width = 3)
 
 
 # --- Feature importance ---
@@ -658,9 +676,19 @@ tidy(model) %>%
   filter(term != "(Intercept)", estimate != 0) %>%
   arrange(desc(abs(estimate))) 
 
+coefs <- tidy(model) %>%
+  filter(term != "(Intercept)", estimate != 0)
 
+# Get top N features with largest absolute effect size
+top_features <- coefs %>%
+  arrange(desc(abs(estimate))) %>%
+  slice_head(n = 10) %>%   # 👈 change 10 to your preferred number
+  pull(term)
 # Clean up top_features by removing backticks
 top_features_clean <- stringr::str_remove_all(top_features, "`")
+# Extract the downsampled data with labels from the baked recipe
+train_baked_labeled <- bake(rec_prepped, new_data = NULL, composition = "tibble") %>%
+  select(-sample_information)
 
 # Then select and plot
 plot_data <- train_baked_labeled %>%
@@ -668,36 +696,35 @@ plot_data <- train_baked_labeled %>%
   pivot_longer(-Type, names_to = "Feature", values_to = "Value")
 
 # Taxa names you want to identify
-target_ids <- c("8eb4e34fd58ab95fa2efab34940c01fa", "c728ad6f5d183cb36fa06b6a3a47758b")
+#target_ids <- c("c728ad6f5d183cb36fa06b6a3a47758b", "8eb4e34fd58ab95fa2efab34940c01fa","409f711b59152d57926cf444c5577087","ffc36e27c82042664a16bcd4d380b286","8f6e2a91e20994c00566a5ff2b49506e")
 
 # Retrieve tax_table as a data frame
-tax_df <- as.data.frame(tax_table(phy))
+#tax_df <- as.data.frame(tax_table(phy))
 
 # Look up the Genus for the target taxa
-genus_labels <- tax_df[target_ids, "Genus", drop = FALSE]
-genus_labels
+#genus_labels <- tax_df[target_ids, "Genus", drop = FALSE]
+#genus_labels
 
 # Create mapping of hash IDs to genus
-label_map <- setNames(genus_labels$Genus, rownames(genus_labels))
+#label_map <- setNames(genus_labels$Genus, rownames(genus_labels))
 
 # Relabel Feature column
-plot_data_ordered <- plot_data_ordered %>%
-  mutate(Feature = recode(Feature, !!!label_map))
+#plot_data_ordered <- plot_data_ordered %>%
+#  mutate(Feature = recode(Feature, !!!label_map))
 
 
-plot_data_ordered <- plot_data %>%
-  mutate(
-    Feature = factor(
-      Feature,
-      levels = c(
-        setdiff(unique(Feature), c("8eb4e34fd58ab95fa2efab34940c01fa", "c728ad6f5d183cb36fa06b6a3a47758b")),
-        "8eb4e34fd58ab95fa2efab34940c01fa", 
-        "c728ad6f5d183cb36fa06b6a3a47758b"
-      )
-    )
-  )
+#plot_data_ordered <- plot_data %>%
+#  mutate(
+#    Feature = factor(
+#      Feature,
+#      levels = c(
+#        setdiff(unique(Feature), c("c728ad6f5d183cb36fa06b6a3a47758b", "8eb4e34fd58ab95fa2efab34940c01fa","409f711b59152d57926cf444c5577087","ffc36e27c82042664a16bcd4d380b286","8f6e2a91e20994c00566a5ff2b49506e")),
+#        "c728ad6f5d183cb36fa06b6a3a47758b", "8eb4e34fd58ab95fa2efab34940c01fa","409f711b59152d57926cf444c5577087","ffc36e27c82042664a16bcd4d380b286","8f6e2a91e20994c00566a5ff2b49506e"
+#      )
+#    )
+#  )
 
-p <- ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
+p <- ggplot(plot_data, aes(x = Type, y = Value, fill = Type)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
   facet_wrap(~ Feature, scales = "free", ncol = 2) +
   scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
@@ -705,10 +732,10 @@ p <- ggplot(plot_data_ordered, aes(x = Type, y = Value, fill = Type)) +
   labs(title = "Top Predictive Features", 
        x = "", y = "Z-score") +
   theme(legend.position = "none")
+p
 
-
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features.svg", height = 10, width = 5)
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features.png", height = 10, width = 5)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_clinical.svg", height = 10, width = 5)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/top_features_clinical.png", height = 10, width = 5)
 
 ################################################### roc_curve_train_test
 best_threshold = 0.5
@@ -747,18 +774,20 @@ roc_test <- roc_curve(pred_prob_test, truth = Type, .pred_DM) %>%
 roc_combined <- bind_rows(roc_train, roc_test)
 
 # Plot
+print(acc)
+print(auc)
 
 
 p <- ggplot(roc_combined, aes(x = 1 - specificity, y = sensitivity, color = Set)) +
   geom_path(size = 1.2) +
   geom_abline(lty = 2, color = "gray") +
   theme_minimal() +
-  labs(title = "ROC Curve", x = "1 - Specificity", y = "Sensitivity") +
+  labs(title = "ROC AUC - 0.958   Accuracy - 0.786 ", x = "1 - Specificity", y = "Sensitivity") +
   scale_color_manual(values = c("Train" = "#3a99bc", "Test" = "#db9e2a"))
 
-
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test.svg", height = 3, width = 3.5)
-#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test.png", height = 3, width = 3.5)
+p
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test_clinical.svg", height = 3, width = 3.5)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/roc_curve_train_test_clinical.png", height = 3, width = 3.5)
 ################################### HEatmap 
 
 top_features <- tidy(model) %>%
@@ -777,8 +806,25 @@ cor_matrix <- cor(heatmap_data, use = "pairwise.complete.obs")
 
 library(pheatmap)
 
-feature_labels <- c("8eb4e34fd58ab95fa2efab34940c01fa" = "Prevotella_9", "c728ad6f5d183cb36fa06b6a3a47758b" = "Faecalibacterium")
+target_ids <- c(
+  "c728ad6f5d183cb36fa06b6a3a47758b",
+  "8eb4e34fd58ab95fa2efab34940c01fa",
+  "409f711b59152d57926cf444c5577087",
+  "ffc36e27c82042664a16bcd4d380b286",
+  "8f6e2a91e20994c00566a5ff2b49506e"
+)
 
+# Convert tax_table to data.frame for easy handling
+tax_df <- as.data.frame(tax_table(phy))
+
+# Subset Genus names for the given IDs
+genus_labels <- tax_df[target_ids, "Genus"]
+
+# Create a named vector for relabeling
+feature_labels <- setNames(
+  paste0("g__", as.character(genus_labels)),
+  target_ids
+)
 
 colnames(cor_matrix) <- ifelse(colnames(cor_matrix) %in% names(feature_labels),
                                feature_labels[colnames(cor_matrix)],
@@ -841,8 +887,8 @@ ht <- pheatmap(
 
 
 
-#ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap.svg", height = 8, width = 8)
-#ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap.png", height = 8, width = 8)
+ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap_clinical.svg", height = 8, width = 8)
+ggsave(plot=ht,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/correlation_heatmap_clinical.png", height = 8, width = 8)
 
 ########################################## forest plot
 
@@ -878,6 +924,7 @@ lg <- ggplot(coef_df, aes(x = estimate, y = reorder(term, estimate))) +
        x = "Log-Odds (Coefficient)",
        y = NULL) +
   theme(text = element_text(size = 12))
+lg
 
-ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs.svg", height = 8, width = 8)
-ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs.png", height = 8, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_clinical.svg", height = 8, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/log_reg_coefs_clinical.png", height = 8, width = 8)

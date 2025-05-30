@@ -31,7 +31,7 @@ df <- df %>%
          glucose_change = glukose2 - glukose1,
          hba1c_change = hb_a1c_dcct_ngsp_2 - hb_a1c_dcct_ngsp_1)
 
-ggpaired(df, cond1 = "glukose1", cond2 = "glukose2", id = "pat_id", line.color = "gray") +
+ggpaired(df, cond1 = "glukose1", cond2 = "glukose2", id = "probennummer", line.color = "gray") +
   labs(title = "BMI before and after")
 
 
@@ -44,7 +44,7 @@ type_colors <- c("DM" = "#E1812C", "PDM" = "#3A923A", "K" = "#3274A1")
 ggpaired(df_bmi,
          cond1 = "bmi1",
          cond2 = "bmi2",
-         id = "pat_id",
+         id = "probennummer",
          color = "Type",  # Add this line
          line.color = "gray",
          line.size = 0.4,
@@ -163,7 +163,7 @@ rownames(annotation_row) <- as.character(rownames(annotation_row))
 binary_matrix <- as.matrix(binary_data)
 
 
-svg("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap_binary.svg", height = 10, width = 5)
+#svg("/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/heatmap_binary.svg", height = 10, width = 5)
 
 
 pheatmap(
@@ -247,8 +247,8 @@ p <- p + theme(
   panel.background = element_rect(fill = "white", color = NA),
   plot.background = element_rect(fill = "white", color = NA)
 )
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/boolean_count.svg", height = 10, width = 10)
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/boolean_count.png", height = 10, width = 10)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/boolean_count.svg", height = 10, width = 10)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/boolean_count.png", height = 10, width = 10)
 
 
 ################################################ LAB BLOOD TEST
@@ -614,9 +614,25 @@ name_map <- c(
 forest_df <- forest_df %>%
   mutate(variable = recode(variable, !!!name_map))
 
+
+forest_df <- forest_df %>%
+  group_by(group) %>%
+  mutate(p.adj = p.adjust(p.value, method = "fdr")) %>%
+  ungroup() %>%
+  mutate(
+    sig = case_when(
+      p.adj < 0.001 ~ "***",
+      p.adj < 0.01  ~ "**",
+      p.adj < 0.05  ~ "*",
+      TRUE          ~ ""
+    )
+  )
+
+
 forest_df_sig <- forest_df %>%
-  filter(p.value < 0.05) %>%
+  filter(p.adj < 0.05) %>%
   mutate(variable = recode(variable, !!!name_map))
+
 
 
 # 6. Plot
@@ -654,7 +670,7 @@ p <- p +
 
 
 p
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.svg", height = 5, width = 7)
-ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.png", height = 5, width = 7)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.svg", height = 5, width = 7)
+#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.png", height = 5, width = 7)
 
-write.csv(forest_df_sig, file = "/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/tables/v02/forest_df_sig.csv", row.names = FALSE)
+#write.csv(forest_df_sig, file = "/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/tables/v02/forest_df_sig.csv", row.names = FALSE)
