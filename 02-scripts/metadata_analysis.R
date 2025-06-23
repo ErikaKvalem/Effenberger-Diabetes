@@ -647,7 +647,7 @@ p <- ggplot(forest_df_sig, aes(x = estimate, y = reorder(variable, estimate), co
   labs(
     x = "Mean effect (Follow up vs Baseline)",
     y = "",
-    title = "",
+    title = "Longitudinal changes in clinical variables",
     color = ""
   ) +
   theme_minimal() + 
@@ -664,13 +664,13 @@ p <- p + theme(
 
 p <- p + 
   annotate("text", x = Inf, y = -Inf, hjust = 1.05, vjust = -1.5,
-           label = "* p < 0.05   ** p < 0.01   *** p < 0.001",
+           label = "* p.adj < 0.05   ** p.adj < 0.01   *** p.adj < 0.001",
            size = 4, color = "black", fontface = "italic")
 
 
 
 p
-#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.svg", height = 5, width = 7)
-#ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/forest_plot_numerical_groups_sig.png", height = 5, width = 7)
+ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/forest_plot_numerical_groups_padjsig.svg", height = 5, width = 7)
+ggsave(plot = p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/forest_plot_numerical_groups_padjsig.png", height = 5, width = 7)
 
 #write.csv(forest_df_sig, file = "/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/tables/v02/forest_df_sig.csv", row.names = FALSE)
