@@ -6,6 +6,7 @@ library(ggplot2)
 library(ggpmisc)
 
 library(dplyr)
+
 library(microbiomeMarker)
 
 
@@ -690,10 +691,13 @@ otu_df <- as.data.frame(t(otu_table(ps_rel)))
 
 # Combine with metadata
 meta_df <- as.data.frame(sample_data(phy))
+meta_df <- meta_df[, !grepl("FU", names(meta_df))]
+
 #data_all <- cbind(meta_df, otu_df)
 
 
 data_all <- as(sample_data(phy), "data.frame")
+data_all <- data_all[, !grepl("FU", names(data_all))]
 #clinical_vars <- colnames(data_all)
 #bs_vars <- clinical_vars[grepl("\\(BS\\)$", clinical_vars)]
 #fu_vars <- gsub("\\(BS\\)$", "(FU)", bs_vars)
@@ -716,28 +720,43 @@ data_all <- as(sample_data(phy), "data.frame")
 data_all$Type <- ifelse(grepl("PDM", data_all$sample_information), "PDM",
                         ifelse(grepl("K", data_all$sample_information), "K", "DM"))
 
+
 data_all <- data_all %>%
   filter(Type %in% c("PDM", "DM")) %>%
   mutate(Type = factor(Type))
 
 # Split data into train and test
 set.seed(421)
-split <- initial_split(data_all, prop = 0.65, strata = Type)
+split <- initial_split(data_all, prop = 0.7, strata = Type)
 train <- split %>% 
   training()
 test <- split %>% 
   testing()
 
+#rec <- recipe(Type ~ ., data = train) %>%
+#  update_role(sample_information, new_role = "id") %>%
+#  step_novel(all_nominal_predictors()) %>%  #
+#  step_zv(all_predictors()) %>%
+#  step_nzv(all_nominal_predictors()) %>%
+#  step_unknown(all_nominal_predictors()) %>%         
+#  step_impute_mean(all_numeric_predictors()) %>%    
+#  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+#  step_normalize(all_numeric_predictors())
+#  #step_downsample(Type)
+
 rec <- recipe(Type ~ ., data = train) %>%
   update_role(sample_information, new_role = "id") %>%
-  step_novel(all_nominal_predictors()) %>%  #
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
   step_zv(all_predictors()) %>%
-  step_nzv(all_nominal_predictors()) %>%
-  step_unknown(all_nominal_predictors()) %>%         
-  step_impute_mean(all_numeric_predictors()) %>%    
-  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
-  step_normalize(all_numeric_predictors()) %>%
-  step_downsample(Type)
+  step_nzv(all_predictors()) %>%                             # remove low-variance vars
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors(), one_hot = FALSE) %>%  # use less aggressive encoding
+  step_corr(all_numeric_predictors(), threshold = 0.8) %>%   # remove correlated features
+  step_normalize(all_numeric_predictors())
+
+rec <- rec %>%
+  step_select_roc(all_predictors(), outcome = "Type", top_p = 30)  # Select top 20 based on AUC
 
 set.seed(421)
 rec_prepped <- prep(rec, training = train)
@@ -752,6 +771,448 @@ model <- logistic_reg(penalty = 0.1, mixture = 1) %>%
   set_mode("classification") %>%
   fit(Type ~ ., data = train_baked)
 
+
+################################### improved model 
+library(tidymodels)
+library(vip)
+library(tidymodels)
+library(vip)
+
+# Recipe with correlation filter
+set.seed(421) 
+rec <- recipe(Type ~ ., data = train) %>%
+  update_role(sample_information, new_role = "id") %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_nzv(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_normalize(all_numeric_predictors())
+ # step_corr(all_numeric_predictors(), threshold = 0.9)    
+ # step_downsample(Type, seed = 421)  
+
+
+
+# Define tunable logistic regression model
+model_spec <- logistic_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+# Workflow
+wf <- workflow() %>%
+  add_model(model_spec) %>%
+  add_recipe(rec)
+
+# Cross-validation folds
+set.seed(421)
+folds <- vfold_cv(train, v =5, strata = Type)
+
+# Grid of penalties
+grid <- grid_regular(penalty(), levels = 40)
+
+# Tune model
+set.seed(421) 
+tuned <- tune_grid(wf, resamples = folds, grid = grid, metrics = metric_set(accuracy, roc_auc))
+
+# Select best model
+best <- select_best(tuned, metric = "accuracy")
+
+# Finalize and fit
+final_wf <- finalize_workflow(wf, best)
+final_fit <- fit(final_wf, data = train)
+
+# Predict on raw test data (workflow handles preprocessing)
+pred_class <- predict(final_fit, new_data = test)
+pred_prob  <- predict(final_fit, new_data = test, type = "prob")
+
+# Combine and evaluate
+results <- bind_cols(test, pred_class, pred_prob)
+
+library(yardstick)
+metrics(results, truth = Type, estimate = .pred_class)
+roc_auc(results, truth = Type, .pred_DM)  # replace with your actual positive class if needed
+
+
+# Variable importance plot
+glmnet_model <- final_fit$fit$fit
+vip(glmnet_model, num_features = 30, lambda = best$penalty)
+
+# Get probabilities
+results <- bind_cols(test, predict(final_fit, test, type = "prob"), predict(final_fit, test))
+
+
+# --- Set threshold ---
+best_threshold <- 0.5
+
+# --- Prepare train and test sets with predictions ---
+
+# Baked data (preprocessed using same recipe)
+train_baked_with_type <- bake(prep(rec, training = train), new_data = train) %>%
+  mutate(Type = train$Type)
+
+test_baked_with_type <- bake(prep(rec, training = train), new_data = test) %>%
+  mutate(Type = test$Type)
+
+# Predict probabilities
+pred_prob_train <- predict(final_fit, new_data = train, type = "prob") %>%
+  mutate(
+    .pred_class = if_else(.pred_DM >= best_threshold, "DM", "PDM"),
+    Type = train$Type,
+    Set = "Train"
+  )
+
+pred_prob_test <- predict(final_fit, new_data = test, type = "prob") %>%
+  mutate(
+    .pred_class = factor(if_else(.pred_DM >= 0.5, "DM", "PDM"), levels = levels(test$Type)),
+    Type = test$Type,
+    Set = "Test"
+  )
+
+# --- Combine predictions ---
+combined_preds <- bind_rows(pred_prob_train, pred_prob_test)
+
+# --- ROC curves ---
+roc_train <- roc_curve(pred_prob_train, truth = Type, .pred_DM) %>%
+  mutate(Set = "Train")
+
+roc_test <- roc_curve(pred_prob_test, truth = Type, .pred_DM) %>%
+  mutate(Set = "Test")
+
+roc_combined <- bind_rows(roc_train, roc_test)
+
+# --- Accuracy and AUC ---
+acc <- metrics(pred_prob_test, truth = Type, estimate = .pred_class) %>%
+  filter(.metric == "accuracy") %>%
+  pull(.estimate)
+
+auc <- roc_auc(pred_prob_test, truth = Type, .pred_DM) %>%
+  pull(.estimate)
+
+# --- Plot ROC with metrics in title ---
+library(ggplot2)
+p <- ggplot(roc_combined, aes(x = 1 - specificity, y = sensitivity, color = Set)) +
+  geom_path(size = 1.2) +
+  geom_abline(lty = 2, color = "gray") +
+  theme_minimal() +
+  labs(
+    title = paste0("ROC AUC = ", round(auc, 3), "   Accuracy = ", round(acc, 3)),
+    x = "1 - Specificity", y = "Sensitivity"
+  ) +
+  scale_color_manual(values = c("Train" = "#3a99bc", "Test" = "#db9e2a"))
+
+print(p)
+
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/roc_curve_train_test_clinical.svg", height = 3, width = 3.5)
+#ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/roc_curve_train_test_clinical.png", height = 3, width = 3.5)
+
+
+
+library(broom)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+
+# Extract non-zero coefficients from the fitted glmnet model
+coef_df <- tidy(final_fit$fit$fit) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  arrange(estimate) %>%
+  mutate(term = str_remove_all(term, "`"))  # Clean backticks from variable names
+
+# Add placeholder standard errors (glmnet doesn't return SEs)
+coef_df <- coef_df %>%
+  mutate(std.error = abs(estimate) * 0.2)  # You can adjust the multiplier
+
+
+
+coef_df$term <- recode(coef_df$term, !!!feature_labels)
+
+# Plot coefficients
+lg <- ggplot(coef_df, aes(x = estimate, y = reorder(term, estimate))) +
+  geom_col(fill = "#3182bd") +
+  geom_errorbarh(aes(xmin = estimate - std.error,
+                     xmax = estimate + std.error),
+                 height = 0.3, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Logistic Regression Coefficients",
+    x = "Log-Odds (Coefficient)",
+    y = NULL
+  ) +
+  theme(text = element_text(size = 20))
+
+# Print the plot
+print(lg)
+
+#ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/log_reg_coefs_clinical.svg", height = 6, width = 10)
+#ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/log_reg_coefs_clinical.png", height = 6, width =10)
+
+
+###################################
+
+####
+# ─────────────────────────────────────────────────────────────
+# Logistic Regression with Tidymodels (Reproducible Pipeline)
+# Author: <Your Name>
+# Date: <Date>
+# Description: Penalized logistic regression using glmnet
+# ─────────────────────────────────────────────────────────────
+
+# 0. Load libraries
+library(tidymodels)
+tidymodels_prefer()
+set.seed(421)
+
+# 1. Split the data
+split <- initial_split(data_all, prop = 0.65, strata = Type)
+train <- training(split)
+test  <- testing(split)
+
+# 2. Preprocessing recipe
+rec <- recipe(Type ~ ., data = train) %>%
+  update_role(sample_information, new_role = "id") %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_nzv(all_predictors()) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors(), one_hot = FALSE) %>%
+  step_corr(all_numeric_predictors(), threshold = 0.6) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_downsample(Type)
+
+# 3. Define logistic regression model
+model <- logistic_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+# 4. Combine into a workflow
+wf <- workflow() %>%
+  add_model(model) %>%
+  add_recipe(rec)
+
+# 5. Create 5-fold CV folds
+folds <- vfold_cv(train, v = 5, strata = Type)
+
+# 6. Define tuning grid
+grid <- grid_regular(penalty(), levels = 15)
+
+# 7. Tune model over grid
+tune_res <- tune_grid(
+  wf,
+  resamples = folds,
+  grid = grid,
+  metrics = metric_set(accuracy, roc_auc)
+)
+
+# 8. Select best hyperparameter set
+best_params <- select_best(tune_res, metric = "roc_auc")
+
+# 9. Finalize workflow with best params
+final_wf <- finalize_workflow(wf, best_params)
+
+# 10. Fit finalized model on full training set and evaluate on test
+final_fit <- last_fit(final_wf, split)
+
+# 11. Report final metrics
+final_metrics <- collect_metrics(final_fit)
+print(final_metrics)
+
+# --- Collect test set predictions from last_fit ---
+#results <- collect_predictions(final_fit)
+
+results <- collect_predictions(final_fit) %>%
+  mutate(.pred_class = if_else(.pred_DM >= 0.35, "DM", "PDM") %>% factor(levels = levels(Type)))
+
+
+# --- Evaluation Metrics ---
+acc <- accuracy(results, truth = Type, estimate = .pred_class)
+auc <- roc_auc(results, truth = Type, .pred_DM)
+
+print(acc)
+print(auc)
+
+# --- Confusion Matrix ---
+conf_matrix <- conf_mat(results, truth = Type, estimate = .pred_class)
+print(conf_matrix)
+
+# --- Confusion Matrix Plot ---
+conf_matrix_plot <- conf_matrix %>%
+  autoplot(type = "heatmap") +
+  scale_fill_gradient(high = "#E1812C", low = "#3A923A") +
+  labs(title = "Clinical model", subtitle = "")
+
+conf_matrix_plot
+ggsave(plot=conf_matrix_plot,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/confusion_matrix_clinical.svg", height = 3, width = 3)
+ggsave(plot=conf_matrix_plot,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/confusion_matrix_clinical.png", height = 3, width = 3)
+
+# --- ROC Curves ---
+
+# --- Predict probabilities ---
+
+best_threshold <- 0.5  # You can tune this
+
+# --- Get final workflow components ---
+final_model <- extract_fit_parsnip(final_fit$.workflow[[1]])
+final_recipe <- extract_recipe(final_fit$.workflow[[1]])
+
+# --- Prepare baked data ---
+train_baked <- bake(final_recipe, new_data = training(split)) %>%
+  select(-sample_information)
+test_baked <- bake(final_recipe, new_data = testing(split)) %>%
+  select(-sample_information)
+pred_prob_train <- predict(final_model, new_data = train_baked, type = "prob") %>%
+  mutate(
+    .pred_class = factor(if_else(.pred_DM > best_threshold, "DM", "PDM"), levels = levels(training(split)$Type)),
+    Type = training(split)$Type,
+    Set = "Train"
+  )
+
+# Test set predictions
+pred_prob_test <- predict(final_model, new_data = test_baked, type = "prob") %>%
+  mutate(
+    .pred_class = factor(if_else(.pred_DM > best_threshold, "DM", "PDM"), levels = levels(testing(split)$Type)),
+    Type = testing(split)$Type,
+    Set = "Test"
+  )
+
+combined_preds <- bind_rows(pred_prob_train, pred_prob_test)
+
+acc_train <- accuracy(pred_prob_train, truth = Type, estimate = .pred_class)
+auc_train <- roc_auc(pred_prob_train, truth = Type, .pred_DM)
+
+acc_test <- accuracy(pred_prob_test, truth = Type, estimate = .pred_class)
+auc_test <- roc_auc(pred_prob_test, truth = Type, .pred_DM)
+
+roc_train <- roc_curve(pred_prob_train, truth = Type, .pred_DM) %>% mutate(Set = "Train")
+roc_test  <- roc_curve(pred_prob_test,  truth = Type, .pred_DM) %>% mutate(Set = "Test")
+roc_combined <- bind_rows(roc_train, roc_test)
+
+# --- Plot ROC
+p <- ggplot(roc_combined, aes(x = 1 - specificity, y = sensitivity, color = Set)) +
+  geom_path(size = 1.2) +
+  geom_abline(linetype = 2, color = "gray") +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "ROC AUC - 0.979 Accuracy - 0.857 ",
+    
+    x = "1 - Specificity",
+    y = "Sensitivity"
+  ) +
+  scale_color_manual(values = c("Train" = "#3a99bc", "Test" = "#db9e2a"))
+
+print(p)
+
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/roc_curve_train_test_clinical.svg", height = 3, width = 3.5)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/roc_curve_train_test_clinical.png", height = 3, width = 3.5)
+
+library(broom)     # for tidy()
+library(ggplot2)
+library(stringr)
+library(dplyr)
+
+# Extract final fitted model from workflow
+final_fit_model <- extract_fit_parsnip(final_fit$.workflow[[1]])
+
+# Get non-zero coefficients from glmnet model
+coef_df <- tidy(final_fit_model) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  arrange(estimate) %>%
+  mutate(term = str_remove_all(term, "`"))  # Remove backticks
+
+# Optional: Add placeholder standard errors
+coef_df <- coef_df %>%
+  mutate(std.error = abs(estimate) * 0.2)
+
+
+coef_df$term <- recode(coef_df$term, !!!feature_labels)
+
+# Plot
+lg <- ggplot(coef_df, aes(x = estimate, y = reorder(term, estimate))) +
+  geom_col(fill = "#3182bd") +
+  geom_errorbarh(aes(xmin = estimate - std.error,
+                     xmax = estimate + std.error),
+                 height = 0.3, color = "black") +
+  theme_minimal() +
+  labs(title = "Logistic Regression Coefficients",
+       x = "Log-Odds (Coefficient)",
+       y = NULL) +
+  theme(text = element_text(size = 16))
+
+lg
+
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/log_reg_coefs_clinical.svg", height = 4, width = 8)
+ggsave(plot=lg,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/log_reg_coefs_clinical.png", height = 4, width = 8)
+
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(tidymodels)
+library(stringr)
+
+# 1. Extract fitted model from final workflow
+final_model <- extract_fit_parsnip(final_fit$.workflow[[1]])
+
+# 2. Get non-zero coefficients (excluding intercept)
+coefs <- tidy(final_model) %>%
+  filter(term != "(Intercept)", estimate != 0)
+
+# 3. Get top N features by absolute effect size
+top_features <- coefs %>%
+  arrange(desc(abs(estimate))) %>%
+  slice_head(n = 10) %>%
+  pull(term)
+
+# 4. Clean feature names (remove backticks)
+top_features_clean <- str_remove_all(top_features, "`")
+
+# 5. Get labeled and normalized train data from prepped recipe
+train_baked_labeled <- bake(rec_prepped, new_data = NULL, composition = "tibble") %>%
+  select(-sample_information)
+top_features_clean <- str_remove_all(top_features, "`")
+# Get post-processed names from the recipe
+baked_predictor_names <- bake(rec_prepped, new_data = NULL) %>%
+  select(-sample_information, -Type) %>%  # remove non-predictors
+  names()
+
+# Then safely intersect with top_features
+top_features_clean <- intersect(top_features, baked_predictor_names)
+
+# 6. Pivot to long format for plotting
+plot_data <- train_baked_labeled %>%
+  select(Type, all_of(top_features_clean)) %>%
+  pivot_longer(-Type, names_to = "Feature", values_to = "Value")
+
+# 7. Create violin plot with significance testing
+p <- ggplot(plot_data, aes(x = Type, y = Value, fill = Type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  facet_wrap(~ Feature, scales = "free", ncol = 5) +
+  scale_fill_manual(values = c("DM" = "#E1812C", "PDM" = "#3A923A")) +
+  stat_compare_means(
+    method = "wilcox.test", 
+    label = "p.signif", 
+    comparisons = list(c("DM", "PDM")),
+    p.adjust.method = "BH",   # FDR correction
+    hide.ns = TRUE
+  ) +
+  theme_minimal() +
+  labs(
+    title = "", 
+    x = "", 
+    y = "Z-score"
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 16, )
+  )
+
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/top_features_clinical.svg", height = 6, width = 15)
+ggsave(plot=p,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v03/top_features_clinical.png", height = 6, width = 15)
+
+####
 pred_prob <- predict(model, new_data = test_baked, type = "prob")
 pred_class <- predict(model, new_data = test_baked, type = "class")
 
@@ -772,7 +1233,7 @@ print(conf_mat(results, truth = Type, estimate = .pred_class))
 c <- conf_mat(results, truth = Type, estimate = .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_fill_gradient(high = "#E1812C", low = "#3A923A") +
-  labs(title = "Clinical model confusion matrix")
+  labs(title = "Clinical model")
 c
 
 ggsave(plot=c,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v02/confusion_matrix_clinical.svg", height = 3, width = 3)
