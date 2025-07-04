@@ -397,8 +397,15 @@ dat_all <- dat_all %>%
   ) %>%
   mutate(across(Kingdom:Species, ~str_remove(., "^[a-z]__")))  # strip "k__", "p__", etc.
 
+##################################### NEW 
 # Sample metadata (clinical features)
 clinical_df <- data.frame(sample_data(phy), check.names = FALSE)
+clinical_df$Sex_ <- ifelse(clinical_df$Sex == "f", 0, 1)
+
+clinical_vars <- c("Smoking Status","Insulin Therapy (BS)","Pancreatectomy","HbA1c (DCCT/NGSP) (BS)", "MASLD (BS)","Age","Sex_"
+
+)
+########################################
 
 # Microbial abundance table
 abund <- as.data.frame(otu_table(phy))
@@ -496,14 +503,18 @@ clinical_df <- clinical_df[shared_samples, ]
 abund_sel <- abund_sel[shared_samples, ]
 
 
-
+############################################################################## NEW correlation selected important clinical features by doctor
 # Filter to available ones
 clinical_vars <- clinical_vars[clinical_vars %in% colnames(clinical_df)]
+
+# Get only numeric clinical variables
+clinical_vars <- clinical_vars[clinical_vars %in% names(clinical_df[sapply(clinical_df, is.numeric)])]
+
 
 # Compute correlations
 cor_results <- expand.grid(
   microbe = colnames(abund_sel),
-  clinical_var = delta_vars,
+  clinical_var = clinical_vars,
   stringsAsFactors = FALSE
 ) %>%
   mutate(
@@ -530,7 +541,7 @@ cor_results <- cor_results %>%
     TRUE ~ ""
   ))
 
-ggplot(cor_results, aes(x = clinical_var, y = microbe, fill = cor)) +
+pp<- ggplot(cor_results, aes(x = clinical_var, y = microbe, fill = cor)) +
   geom_tile(color = "white") +
   geom_text(aes(label = signif), size = 4, color = "black") +
   scale_fill_gradient2(
@@ -547,6 +558,8 @@ ggplot(cor_results, aes(x = clinical_var, y = microbe, fill = cor)) +
     axis.text.x = element_text(angle = 90, hjust = 1),
     panel.grid = element_blank()
   )
+ggsave(plot=pp,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v04/correlation_micro_clinical_doctor.svg", height = 5, width = 8)
+ggsave(plot=pp,"/data/scratch/kvalem/projects/2024/Effenberger-Diabetes/02-scripts/figures/v04/correlation_micro_clinical_doctor.png", height = 5, width = 8)
 
 ##################################
 
@@ -1160,7 +1173,7 @@ coefs <- tidy(final_model) %>%
 # 3. Get top N features by absolute effect size
 top_features <- coefs %>%
   arrange(desc(abs(estimate))) %>%
-  slice_head(n = 10) %>%
+  slice_head(n = 100) %>%
   pull(term)
 
 # 4. Clean feature names (remove backticks)
