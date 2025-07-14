@@ -133,9 +133,9 @@ name_map_full <- c(
   "age" = "Age",
   
   # Baseline (BS)
-  "hyperlipid_mie_20181" = "Hyperlipidemia (BS)",
+  "hyperlipidamie_2018" = "Hyperlipidemia (BS)",
   "arterielle_hyperotnie1" = "Arterial Hypertension (BS)",
-  "bmi1" = "Body Mass Index (BMI) (BS)",
+  "bmi" = "Body Mass Index (BMI) (BS)",
   "gr_e1" = "Height (BS)",
   "gewicht1" = "Weight (BS)",
   "lipidsenker1" = "Lipid-lowering Medication (BS)",
